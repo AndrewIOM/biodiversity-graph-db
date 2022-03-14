@@ -1,32 +1,5 @@
 ﻿namespace BiodiversityCoder.Core
 
-[<AutoOpen>]
-module Result =
-
-    let succeed x = 
-        Ok x
-
-    let apply f result =
-        match f,result with
-        | Ok f, Ok x -> 
-            f x |> Ok 
-        | Error e, Ok _ 
-        | Ok _, Error e -> 
-            e |> Error
-        | Error e1, Error e2 -> 
-            e1 |> Error 
-
-    let lift f result =
-        let f' =  f |> succeed
-        apply f' result
-
-    let (<*>) = apply
-    let (<!>) = lift
-
-    let switch f = 
-        f >> succeed
-
-
 /// Contains types for working literature and
 /// other data sources.
 module Sources =
@@ -50,6 +23,24 @@ module Sources =
         | GreyLiterature
         | BookChapter
         | DarkData
+
+    type SourceNode =
+        | Source
+
+    type SourceNodeRelation =
+        | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode
+
+    and SourceRelation =
+        | HasTemporalExtent
+
+    // TODO Use this somewhere.
+    type DataAvailability =
+        | Unavailable
+        | FullOnline of System.Uri
+        | Paywall of System.Uri
+        | Doi of System.Uri
+        | OnRequest
+
 
 
 module BibtexParser =

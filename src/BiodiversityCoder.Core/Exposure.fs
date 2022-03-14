@@ -61,12 +61,15 @@ module Exposure =
         | ExtentLatest              of IndividualTimelineNode * CalYearNode
         | ExtentLatestUncertainty   of IndividualTimelineNode * CalYearNode
         | IntersectsTime            of IndividualTimelineNode * QualitativeLabelNode
+        // from individual temporal extent
+        | HasProxyInfo              of IndividualTimelineNode * Population.ProxiedTaxon.ProxiedTaxonHyperEdge
+        | HasOrphanProxy            of IndividualTimelineNode * Population.BioticProxies.BioticProxyNode
 
     /// A relationship originating from an exposure node
     and ExposureRelation =
         | Next
         | Contains
-        | EarliestTime of string // test
+        | EarliestTime
         | LatestTime                
         | TimeEstimate
         | OccursWithin

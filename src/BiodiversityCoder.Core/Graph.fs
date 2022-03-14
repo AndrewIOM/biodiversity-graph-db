@@ -1,18 +1,5 @@
 namespace BiodiversityCoder.Core
 
-module FieldDataTypes =
-
-    let shortText = string
-
-    let longText = string
-
-    let date = System.DateTime
-
-    // TODO implement types that can be rendered as fields,
-    // and also hold values without having to validate in all
-    // the node and relation types individually.
-
-
 /// Simple representation of a graph data structure
 /// (adapted from https://orbifold.net/default/fsharp-graphs/).
 [<RequireQualifiedAccess>]
@@ -74,11 +61,6 @@ module Graph =
                     addNode newNode acc
                      ) graph items, max.Value
 
-
-    // Remove nodes:
-
-    /// Is true if the atom has a sink
-    /// towards the specified ID.
     let pointsTo id atom =
         atom 
         |> snd
@@ -106,7 +88,6 @@ module Graph =
             ) [] graph
 
     /// Connect two nodes together given a relationship.
-    /// TODO Make more efficient.
     let addRelation sourceId sinkId weight connData (graph:Graph<_,_>) : Result<Graph<'nodeData,'connData>,string> =
         let source = graph |> List.tryFind(fun n -> fst (fst n) = sourceId)
         let sink = graph |> List.tryFind(fun n -> fst (fst n) = sourceId)
@@ -136,15 +117,18 @@ module GraphStructure =
     open Outcomes
 
     type PopulationNode =
-        | TaxonomyNode of Taxonomy.Taxon
+        | TaxonomyNode of Taxonomy.TaxonNode
+        | BioticProxyNode of BioticProxies.BioticProxyNode
+        | InferenceMethodNode of BioticProxies.InferenceMethodNode
+        | ProxiedTaxonNode // Intermediate node that represents a hyperedge
 
     type OutcomeNode =
-        | MeasureNode of BiodiversityMeasures.Measure
+        | MeasureNode of BiodiversityMeasures.MeasureNode
 
     /// Routing type to represent all possible nodes within the
     /// evidence graph.
     type Node =
-        | SourceNode of Source
+        | SourceNode of SourceNode
         | PopulationNode of PopulationNode
         | ExposureNode of ExposureNode
         | OutcomeNode of OutcomeNode
@@ -152,8 +136,9 @@ module GraphStructure =
     /// Routing type to represent all possible relations within
     /// the evidence graph.
     type NodeRelation =
+        | FromSource of Sources.SourceNodeRelation
+        | FromPopulation of Population.PopulationNodeRelation
         | FromExposure of Exposure.ExposureNodeRelation
-        | FromPopulation of Taxonomy.TaxonRelation
 
     /// Routing type to represent all possible relations within
     /// the evidence graph. Can only be created using `makeRelation`,
@@ -161,139 +146,109 @@ module GraphStructure =
     type Relation =
         private
         | Exposure of ExposureRelation
+        | Population of PopulationRelation
 
-    type ValidRelation<'TData> = private ValidRelation of int * int * 'TData
-    let private unwrap (ValidRelation (a,b,c)) = a,b,c
+    type ProposedRelation =
+        | Exposure of ExposureRelation
+        | Population of PopulationRelation
 
-    // Use the name of this relation e.g. 'EarliestTime'
-    // to lookup case on 'ExposureNodeRelation', extract
-    // the first parameter and get its type. Compare this
-    // type to the node's data type. If the same, they are
-    // true. TODO
-    let compareTypes node rel paramIndex = 
-        let nodeType = node.GetType().FullName
-        true
+    /// Functions to tryFind specific node types based on their
+    /// inherent indexes or other conditions.
+    module Nodes =
 
-    let compare source sink rel ifTrue =
-        if compareTypes source rel 0 && compareTypes sink rel 1
-        then Ok <| ValidRelation(fst source, fst sink, ifTrue)
-        else Error "Node didn't match"
+        let asPopnNode = function | PopulationNode n -> Some n | _ -> None
+        let asExposureNode = function | ExposureNode n -> Some n | _ -> None
+        let asSourceNode = function | SourceNode n -> Some n | _ -> None
+        let asOutcomeNode = function | OutcomeNode n -> Some n | _ -> None
 
-    /// Makes a master relation from defined relation DU types.
-    /// This effectively constrains relations to a specific
-    /// node type combination.
-    let makeRelation source sink (rel:ExposureRelation) =
-        match rel with
-        | EarliestTime testData -> compare source sink rel (Exposure(EarliestTime testData))
-        | _ -> failwith "not done"
+        let internal whereTaxon' cond = function
+            | TaxonomyNode t -> if cond t then Some t else None
+            | _ -> None
 
-    /// Add a node relation to the graph, validating that the relation
-    /// can only occur on valid node sources / sinks in the process.
-    let addRelation node1 node2 rel weight (graph:Graph.Graph<'a,Relation>) =
-        let validated = makeRelation node1 node2 rel
-        validated |> Result.map(fun r ->
-            let sourceId,sinkId,data = unwrap r
-            Graph.addRelation sourceId sinkId weight data graph)
+        let internal whereBioticProxy' cond = function
+            | BioticProxyNode t -> if cond t then Some t else None
+            | _ -> None
 
+        let internal whereInferenceMethod' cond = function
+            | InferenceMethodNode t -> if cond t then Some t else None
+            | _ -> None
 
-    let tryFindExposure cond (graph:Graph.Graph<Node,_>) =
-        graph |> List.choose(fun n -> 
-            match fst n with 
-            | i, ExposureNode e -> Some (i, e) 
-            | _ -> None)
-        |> Seq.tryFind (fun (_,e) -> cond e)
+        let internal whereTime' label = function
+            | SliceLabelNode y -> if y.Name = label then Some y else None
+            | _ -> None
 
-    let tryFindYear year g = 
-        g |> tryFindExposure (fun n -> 
-            match n with
-            | YearNode y -> y.Year = year
-            | _ -> false
-        )
+        let internal whereYear' year = function
+            | YearNode y -> if y.Year = year then Some y else None
+            | _ -> None
 
-    let tryFindTimeLabel label g = 
-        g |> tryFindExposure (fun n -> 
-            match n with
-            | SliceLabelNode y -> y.Name = label
-            | _ -> false
-        )
-
-
-module List =
-
-    let retn = Ok
-    let rec mapResult f list =
-        let cons head tail = head :: tail
-        match list with
-        | [] -> 
-            retn []
-        | head::tail ->
-            retn cons <*> (f head) <*> (mapResult f tail)
-
-module Seed =
-
-    open GraphStructure
-    open Exposure
-    open Exposure.TemporalIndex
-
-    let initGraph () =
-        let g : Graph.Graph<Node,Relation> = Graph.empty
-
-        // Population: life node
-        let taxonRoot = Population.Taxonomy.Life
-
-        // Exposure: Holocene time index
-        let timeIndexNodes = 
-            [ 0 .. 14000 ] 
-            |> List.map createTimeNode 
-            |> List.mapResult id
-            |> Result.map(List.map(fun n -> ExposureNode(YearNode n)))
-        let holoceneLabel = SliceLabelNode { Name = "Holocene" }
+        let internal tryFind nodeType cond2 cond graph = 
+            graph
+            |> Graph.tryFind (fun (d,_) -> 
+                snd d |> nodeType |> Option.map(fun x -> cond2 cond x) |> Option.isSome)
+            |> Option.map(fun ((i,d),adj) -> ((i, (d |> nodeType |> Option.get |> cond2 cond |> Option.get)), adj))
         
-        // Outcomes: basic measures
-        let outcomes = [
-            OutcomeNode(MeasureNode Outcomes.BiodiversityMeasures.Abundance)
-            OutcomeNode(MeasureNode Outcomes.BiodiversityMeasures.PresenceAbsence)
-        ]
+        let tryFindTaxon cond graph = tryFind asPopnNode whereTaxon' cond graph
+        let tryFindProxy cond graph = tryFind asPopnNode whereBioticProxy' cond graph
+        let tryFindInferenceMethod cond graph = tryFind asPopnNode whereInferenceMethod' cond graph
+        let tryFindTimePeriod label graph = tryFind asExposureNode whereTime' label graph
+        let tryFindYear year graph = tryFind asExposureNode whereYear' year graph
 
-        let result =
-            g
-            |> Graph.addNodeData [
-                PopulationNode (TaxonomyNode taxonRoot)
-                ExposureNode holoceneLabel
-            ] |> fst
-            |> Graph.addNodeData outcomes |> fst
 
-        // Make 2x relations to define time period.
-        let source = 
-            let a = (g |> tryFindTimeLabel "Holocene").Value
-            match snd a with
-            | SliceLabelNode b -> fst a, b
-            | _ -> failwith "fail"
-        let sink1 = 
-            let a = (g |> tryFindYear 11650<calYearBP>).Value
-            match snd a with
-            | YearNode b -> fst a, b
-            | _ -> failwith "fail"
-        let sink2 = 
-            let a = (g |> tryFindYear 0<calYearBP>).Value
-            match snd a with
-            | YearNode b -> fst a, b
-            | _ -> failwith "fail"
-        ()
-        // let r1 = 
-        //     FromExposure(EarliestTime (snd source, snd sink1))
-        //     |> makeRelation source sink1
-        // let r2 = FromExposure(LatestTime (snd source, snd sink2))
+    module Relations =
 
-        // let added1 =
-        //     timeIndexNodes
-        //     |> lift (fun i -> Graph.addNodeData i result)
-        
-        // let added2 =
-        //     added1
-        //     |> addRelation
+        type ValidRelation<'TData> = private ValidRelation of int * int * 'TData
+        let private unwrap (ValidRelation (a,b,c)) = a,b,c
 
-        // ()
+        // Use the name of this relation e.g. 'EarliestTime'
+        // to lookup case on 'ExposureNodeRelation', extract
+        // the first parameter and get its type. Compare this
+        // type to the node's data type. If the same, they are
+        // true. TODO
+        let compareTypes node rel paramIndex = 
+            let nodeType = node.GetType().FullName
+            true
 
-        // added1
-        // |> lift (Graph.addRelation (fst holoceneStart) (fst holoceneEnd) 1 r1)
+        let compare source sink rel ifTrue =
+            if compareTypes source rel 0 && compareTypes sink rel 1
+            then Ok <| ValidRelation(fst source, fst sink, ifTrue)
+            else Error "Node didn't match"
+
+        /// Makes a master relation from defined relation DU types.
+        /// This effectively constrains relations to a specific
+        /// node type combination.
+        let makeRelation source sink (rel:ProposedRelation) : Result<ValidRelation<Relation>,string> =
+            match rel with
+            | Exposure rel ->
+                match rel with
+                | EarliestTime -> compare source sink rel (Relation.Exposure EarliestTime)
+            | Population rel ->
+                match rel with
+                | InferredFrom -> compare source sink rel (Relation.Population InferredFrom)
+
+        /// Add a node relation to the graph, validating that the relation
+        /// can only occur on valid node sources / sinks in the process.
+        let addRelation (atom1:Graph.Atom<'data,'conn>) (atom2:Graph.Atom<'data2,'conn2>) rel weight (graph:Graph.Graph<'a,Relation>) =
+            result {
+                let! validated = makeRelation (fst atom1) (fst atom2) rel
+                let sourceId,sinkId,data = unwrap validated
+                return! Graph.addRelation sourceId sinkId weight data graph
+            }
+
+        /// Adds a 'proxied taxon' intermediary node to the graph. This node represents
+        /// an 'occurrence' of a combination of inference method, biotic proxy, and taxon
+        /// that are only valid for one time and study.
+        let addProxiedTaxon (edge:ProxiedTaxon.ProxiedTaxonHyperEdge) graph = result {
+            // Get the three included nodes:
+            let! existingProxy = graph |> Nodes.tryFindProxy (fun n -> n = edge.InferredFrom), "proxy doesn't exist"
+            let! existingTaxon = graph |> Nodes.tryFindTaxon (fun n -> n = edge.InferredAs), "taxon doesn't exist"
+            let! existingInfer = graph |> Nodes.tryFindInferenceMethod (fun n -> n = edge.InferredUsing), "infer doesn't exist"
+            let proxiedGraph = Graph.addNodeData [PopulationNode ProxiedTaxonNode] graph
+            let! proxiedTaxon = Graph.getAtom (snd proxiedGraph) (fst proxiedGraph), "no intermediate node"
+            // Add relations that make the intermediate node encode the hyper-edge:
+            return!
+                proxiedGraph |> fst
+                |> addRelation proxiedTaxon existingProxy (Population InferredFrom) 1
+                |> Result.bind (addRelation proxiedTaxon existingProxy (Population InferredFrom) 1)
+                |> Result.bind (addRelation proxiedTaxon existingInfer (Population InferredUsing) 1)
+                |> Result.bind (addRelation proxiedTaxon existingTaxon (Population InferredAs) 1)
+        }

@@ -4,11 +4,13 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Sources.fs" />
+    <Compile Include="Types.fs" />
+    <Compile Include="Outcomes.fs" />
     <Compile Include="Population.fs" />
     <Compile Include="Exposure.fs" />
-    <Compile Include="Outcomes.fs" />
+    <Compile Include="Sources.fs" />
     <Compile Include="Graph.fs" />
+    <Compile Include="Seed.fs" />
     <Compile Include="Storage.fs" />
     <Compile Include="Library.fs" />
   </ItemGroup>
