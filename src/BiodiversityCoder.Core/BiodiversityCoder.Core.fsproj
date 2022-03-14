@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Bolero" Version="0.18.16" />
+    <PackageReference Include="Cyjs.NET" Version="0.0.4" />
   </ItemGroup>
 </Project>

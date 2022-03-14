@@ -8,7 +8,7 @@ open BiodiversityCoder.Core.GraphStructure
 module ``When making a graph`` =
 
     let g : Graph.Graph<Node,Relation> = Graph.empty
-    let outcomeNode = OutcomeNode(MeasureNode(Outcomes.BiodiversityMeasures.Measure.Abundance))
+    let outcomeNode = OutcomeNode(MeasureNode(Outcomes.BiodiversityMeasures.Abundance))
 
     [<Fact>]
     let ``it starts with no nodes`` () =

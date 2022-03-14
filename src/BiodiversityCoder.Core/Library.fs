@@ -4,17 +4,46 @@ open Elmish
 open Bolero
 open Bolero.Html
 
+module GraphVisualisation =
+
+    open Cyjs.NET
+    open Cyjs.NET.Elements
+
+    let nodes (graph:Graph.Graph<GraphStructure.Node,GraphStructure.Relation>) =
+        graph |> Seq.map(fun atom ->
+            let label = (atom |> fst |> snd).ToString()
+            node (atom |> Graph.getAtomId |> string) [ CyParam.label label ] )
+
+    let relations (graph:Graph.Graph<GraphStructure.Node,GraphStructure.Relation>) =
+        graph |> Seq.collect(fun atom ->
+            atom |> snd |> Seq.map(fun (source,sink,_,_) -> source, sink))
+        |> Seq.mapi(fun i (source,sink) -> edge (string i) (string source) (string sink) [])
+
+    let view graph =
+        CyGraph.initEmpty ()
+        |> CyGraph.withElements (nodes graph)
+        |> CyGraph.withElements (relations graph)
+        |> CyGraph.withStyle "node"     
+                [
+                    CyParam.content =. CyParam.label
+                    CyParam.color "#A00975"
+                ]
+        |> CyGraph.withSize(800, 400)
+        |> HTML.toEmbeddedHTML
+
+
 module Test =
 
     type Model =
         {
             x: string
+            Graph: Graph.Graph<GraphStructure.Node,GraphStructure.Relation>
         }
 
     let initModel =
-        {
-            x = ""
-        }
+        match Seed.initGraph() with
+        | Ok g ->  { x = ""; Graph = g }
+        | Error e -> failwithf "Error making graph: %s" e
 
     type Message =
         | Ping
@@ -24,7 +53,11 @@ module Test =
         | Ping -> model
 
     let view model dispatch =
-        text "Hello, world!"
+        div [] [
+            RawHtml (GraphVisualisation.view model.Graph)
+            text "Hello, world!"
+        ]
+        
 
 type MainApp() =
     inherit ProgramComponent<Test.Model, Test.Message>()
