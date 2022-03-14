@@ -36,11 +36,63 @@ module FieldDataTypes =
         let create (culture:CultureInfo) =
             culture.TwoLetterISOLanguageName |> LanguageCode
 
-    let date = System.DateTime
+    [<RequireQualifiedAccess>]
+    module Geography =
+
+        /// Decimal degrees
+        [<Measure>]
+        type DD
+
+        type Latitude = private Latitude of float<DD>
+        type Longitude = private Longitude of float<DD>
+        type Polygon = private Polygon of (Latitude * Longitude) list
+
+        let createLatitude lat =
+            if lat >= -89.9 && lat <= 89.9 then lat * 1.<DD> |> Latitude |> Ok
+            else Error "Latitude must be between -90 and 90 degrees"
+
+        let createLongitude lon =
+            if lon >= -180. && lon <= 180. then lon * 1.<DD> |> Longitude |> Ok
+            else Error "Longitude must be between -180 and 180 degrees"
+
+        let createPolygon points =
+            match points |> Seq.length with
+            | p when p < 2 -> Error "Polygons must have at least three points"
+            | _ -> points |> Polygon |> Ok 
+
+        type SamplingLocation =
+            | Site      of Latitude * Longitude
+            | Area      of Polygon
+            | Locality  of locality:Text.ShortText * district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
+            | District  of district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
+            | Region    of region:Text.ShortText * country:Text.ShortText
+            | Country   of country:Text.ShortText
+            | Arctic
+
+    [<RequireQualifiedAccess>]
+    module OldDate =
+
+        /// Based on 1950 as year zero
+        [<Measure>]
+        type calYearBP
+
+        type Date =
+        | CollectionDate of int<CalYr>
+        | Radiocarbon of int<YBP>
+        | Lead210 of int<YBP>
+
 
     // TODO implement types that can be rendered as fields,
     // and also hold values without having to validate in all
     // the node and relation types individually.
+
+    let date = System.DateTime
+
+    type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
+
+    type Person = FirstName * LastName
+
+    type License = License //?
 
 /// A result computation expression. 
 /// Source: http://www.fssnip.net/7UJ/title/ResultBuilder-Computational-Expression

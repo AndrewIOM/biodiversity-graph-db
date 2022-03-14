@@ -7,6 +7,10 @@ module Outcomes =
 
     module BiodiversityMeasures =
 
-        type Measure =
+        type MeasureNode =
             | Abundance
             | PresenceAbsence
+
+    /// Relations that go from the exposure elements as the source
+    //type OutcomeNodeRelation = 
+    //    | ?

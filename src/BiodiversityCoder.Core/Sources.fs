@@ -1,31 +1,39 @@
 ﻿namespace BiodiversityCoder.Core
 
+open FieldDataTypes
+
 /// Contains types for working literature and
 /// other data sources.
 module Sources =
 
-    type StudyId = Guid
-
-    type ArticleMetadata = {
-        //Id: StudyId
-        Author: string
-        Title: string
-        Journal: string
+    type ArticleMetadataNode = {
+        Author: Text.Text option
+        Title: Text.Text option
+        Journal: Text.ShortText option
         Year: int
         Volume: int
         Number: int
         Pages: int * int
-        Month: string
+        Month: Month
     }
 
-    type Source =
-        | PeerReviewedPaper of ArticleMetadata
-        | GreyLiterature
-        | BookChapter
-        | DarkData
+    type GreySourceNode = {
+        Contact: Person
+        License: License
+        Title: Text.Text
+    }
 
+    type DarkDataNode = {
+        Contact: Person
+        License: License
+        Details: Text.Text
+    }
+
+    /// A graph database node representing a source of information.
     type SourceNode =
-        | Source
+        | Bibliographic of ArticleMetadataNode
+        | GreyLiterature of GreySourceNode
+        | DarkData
 
     type SourceNodeRelation =
         | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode
@@ -57,8 +65,7 @@ module BibtexParser =
             matches
             |> Seq.cast<Match>
             |> Seq.map(fun m ->
-                PeerReviewedPaper {
-                    //Id = System.Guid.NewGuid()
+                Bibliographic {
                     Author = m.Groups.[2].Value
                     Title = m.Groups.[3].Value
                     Journal = m.Groups.[4].Value

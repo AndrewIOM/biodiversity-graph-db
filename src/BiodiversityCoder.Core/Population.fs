@@ -75,6 +75,25 @@ module Population =
             InferredAs:TaxonNode
         }
 
+    module Context =
+
+        open FieldDataTypes
+
+        type ContextNode = {
+            Name: Text.ShortText
+            SamplingLocation: Geography.SamplingLocation
+            SampleOrigin: SampleOrigin
+            SampleLocationDescription: Text.Text option
+        }
+
+        and SampleOrigin =
+            | LakeSediment
+            | PeatCore
+            | Subfossil
+            | LivingOrganism
+            | Other of Text.ShortText
+
+
     /// Relations that go from the exposure elements as the source
     type PopulationNodeRelation =
         // From taxonomy node:

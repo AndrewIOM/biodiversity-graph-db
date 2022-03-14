@@ -33,6 +33,14 @@ module Seed =
                     InferredAs = taxonNode }
         }
 
+    /// Import all sources from a bibtext file.
+    let importSources path graph =
+        let bibText = System.IO.File.ReadAllText(path)
+        BibtexParser.parse bibText
+        |> Result.lift(fun sources ->
+            Graph.addNodeData (sources |> List.map(fun source -> SourceNode source)) graph)
+
+    /// Initalise a graph with the core nodes required for the research question.
     let initGraph () =
 
         // Population: life node
@@ -70,6 +78,8 @@ module Seed =
             let! sink = Nodes.tryFindYear year graph, "Could not get year node"
             return! Relations.addRelation source sink relation 1 graph
         }
+
+        // TODO add 'Next' relations to time nodes.
 
         graph 
         |> Result.bind (addTimeRelation 11650<calYearBP> (Exposure EarliestTime))
