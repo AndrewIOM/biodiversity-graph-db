@@ -123,7 +123,7 @@ module GraphStructure =
         | ProxiedTaxonNode // Intermediate node that represents a hyperedge
 
     type OutcomeNode =
-        | MeasureNode of BiodiversityMeasures.MeasureNode
+        | MeasureNode of Biodiversity.BiodiversityDimensionNode
 
     /// Routing type to represent all possible nodes within the
     /// evidence graph.
@@ -145,12 +145,14 @@ module GraphStructure =
     /// which constrains relations to valid node types only.
     type Relation =
         private
-        | Exposure of ExposureRelation
+        | Source of SourceRelation
         | Population of PopulationRelation
+        | Exposure of ExposureRelation
 
     type ProposedRelation =
-        | Exposure of ExposureRelation
+        | Source of SourceRelation
         | Population of PopulationRelation
+        | Exposure of ExposureRelation
 
     /// Functions to tryFind specific node types based on their
     /// inherent indexes or other conditions.
@@ -183,8 +185,7 @@ module GraphStructure =
 
         let internal tryFind nodeType cond2 cond graph = 
             graph
-            |> Graph.tryFind (fun (d,_) -> 
-                snd d |> nodeType |> Option.map(fun x -> cond2 cond x) |> Option.isSome)
+            |> Graph.tryFind (fun (d,_) -> snd d |> nodeType |> Option.bind(fun x -> cond2 cond x) |> Option.isSome)
             |> Option.map(fun ((i,d),adj) -> ((i, (d |> nodeType |> Option.get |> cond2 cond |> Option.get)), adj))
         
         let tryFindTaxon cond graph = tryFind asPopnNode whereTaxon' cond graph
@@ -199,31 +200,84 @@ module GraphStructure =
         type ValidRelation<'TData> = private ValidRelation of int * int * 'TData
         let private unwrap (ValidRelation (a,b,c)) = a,b,c
 
-        // Use the name of this relation e.g. 'EarliestTime'
-        // to lookup case on 'ExposureNodeRelation', extract
-        // the first parameter and get its type. Compare this
-        // type to the node's data type. If the same, they are
-        // true. TODO
-        let compareTypes node rel paramIndex = 
-            let nodeType = node.GetType().FullName
-            true
+        /// Helpers to read F# cases
+        module Cases =
 
+            open FSharp.Reflection
+
+            let getUnionCaseName (x:'a) = 
+                match FSharpValue.GetUnionFields(x, typeof<'a>) with
+                | case, _ -> case.Name  
+
+            /// Use an equivalent 'NodeRelation' discriminated union to lookup
+            /// the source and sink type constraints for a given relation.
+            /// Returns true if the case parameter at the specified index is
+            /// of the same type as 'node.
+            let compareTypes (node:int * 'node) rel paramIndex = 
+                printfn "type is %A" (rel.GetType().FullName)
+                let lookupType = 
+                    rel.GetType().FullName.Replace("Relation", "NodeRelation")
+                    |> System.Type.GetType
+                printfn "type2 is %A" lookupType
+                let caseName = getUnionCaseName rel
+                printfn "case is %A" caseName
+                let constraintCase =
+                    Reflection.FSharpType.GetUnionCases(lookupType)
+                    |> Seq.tryFind (fun uc -> uc.Name = caseName)
+                printfn "constraint is %A" constraintCase
+                match constraintCase with
+                | Some c -> 
+                    let field = c.GetFields().[paramIndex]
+                    let nodeType =
+                        let baseType = (snd node).GetType().BaseType
+                        if baseType = typeof<System.Object> then (snd node).GetType() else baseType
+                    printfn "field is %A" field
+                    printfn "node type is %A" nodeType
+                    printfn "propetty type is %A" field.PropertyType
+                    printfn "Is match: %A" (field.PropertyType = nodeType)
+                    field.PropertyType = nodeType
+                | None -> false
+                
         let compare source sink rel ifTrue =
-            if compareTypes source rel 0 && compareTypes sink rel 1
+            if Cases.compareTypes source rel 0 && Cases.compareTypes sink rel 1
             then Ok <| ValidRelation(fst source, fst sink, ifTrue)
             else Error "Node didn't match"
 
         /// Makes a master relation from defined relation DU types.
         /// This effectively constrains relations to a specific
-        /// node type combination.
+        /// node type combination. May also implement additional graph
+        /// validation constraints (beyond type signature) here.
         let makeRelation source sink (rel:ProposedRelation) : Result<ValidRelation<Relation>,string> =
             match rel with
             | Exposure rel ->
                 match rel with
                 | EarliestTime -> compare source sink rel (Relation.Exposure EarliestTime)
+                | Next -> compare source sink rel (Relation.Exposure Next)
+                | Contains -> compare source sink rel (Relation.Exposure Contains)
+                | LatestTime -> compare source sink rel (Relation.Exposure LatestTime)
+                | TimeEstimate t -> compare source sink rel (Relation.Exposure <| TimeEstimate t)
+                | OccursWithin t -> compare source sink rel (Relation.Exposure <| OccursWithin t)
+                | UncertaintyOldest t -> compare source sink rel (Relation.Exposure <| UncertaintyOldest t)
+                | UncertaintyYoungest t -> compare source sink rel (Relation.Exposure <| UncertaintyYoungest t)
+                | ExtentEarliest -> compare source sink rel (Relation.Exposure ExtentEarliest)
+                | ExtentEarliestUncertainty -> compare source sink rel (Relation.Exposure ExtentEarliestUncertainty)
+                | ExtentLatest -> compare source sink rel (Relation.Exposure ExtentLatest)
+                | ExtentLatestUncertainty -> compare source sink rel (Relation.Exposure ExtentLatestUncertainty)
+                | IntersectsTime -> compare source sink rel (Relation.Exposure IntersectsTime)
+                | HasProxyInfo -> compare source sink rel (Relation.Exposure HasProxyInfo)
+                | HasOrphanProxy -> compare source sink rel (Relation.Exposure HasOrphanProxy)
+                | IsLocatedAt -> compare source sink rel (Relation.Exposure IsLocatedAt)
             | Population rel ->
                 match rel with
                 | InferredFrom -> compare source sink rel (Relation.Population InferredFrom)
+                | IsA -> compare source sink rel (Relation.Population IsA)
+                | HasLabel -> compare source sink rel (Relation.Population HasLabel)
+                | InferredUsing -> compare source sink rel (Relation.Population InferredUsing)
+                | InferredAs -> compare source sink rel (Relation.Population InferredAs)
+              | Source rel ->
+                match rel with
+                | HasTemporalExtent -> compare source sink rel (Relation.Source HasTemporalExtent)
+
 
         /// Add a node relation to the graph, validating that the relation
         /// can only occur on valid node sources / sinks in the process.

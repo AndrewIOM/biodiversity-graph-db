@@ -109,7 +109,7 @@ module Population =
         | InferredFrom      of ProxiedTaxon.ProxiedTaxonHyperEdge * BioticProxies.BioticProxyNode
         | InferredUsing     of ProxiedTaxon.ProxiedTaxonHyperEdge * BioticProxies.InferenceMethodNode
         | InferredAs        of ProxiedTaxon.ProxiedTaxonHyperEdge * Taxonomy.TaxonNode
-        | MeasuredBy        of ProxiedTaxon.ProxiedTaxonHyperEdge * Outcomes.BiodiversityMeasures.MeasureNode
+        | MeasuredBy        of ProxiedTaxon.ProxiedTaxonHyperEdge * Outcomes.Biodiversity.BiodiversityDimensionNode
         
     /// A relationship originating from a population node
     and PopulationRelation =

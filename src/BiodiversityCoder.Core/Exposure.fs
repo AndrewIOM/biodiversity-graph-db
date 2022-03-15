@@ -46,7 +46,7 @@ module Exposure =
             if yearBeforePresent >= 1950 - System.DateTime.Now.Year
                 && yearBeforePresent <= 14000
             then yearBeforePresent * 1<OldDate.calYearBP> |> CalYear |> Ok
-            else Error <| sprintf "The year %i is not a valid Holocene time" yearBeforePresent
+            else Error <| sprintf "The year %i is not a valid time" yearBeforePresent
 
         type QualitativeLabelNode = {
             Name: string
@@ -91,10 +91,10 @@ module Exposure =
         | Contains
         | EarliestTime
         | LatestTime
-        | TimeEstimate                  of float
-        | OccursWithin                  of float
-        | UncertaintyOldest             of float
-        | UncertaintyYoungest           of float
+        | TimeEstimate                  of exact:float<OldDate.calYearBP>
+        | OccursWithin                  of exact:float<OldDate.calYearBP>
+        | UncertaintyOldest             of exact:float<OldDate.calYearBP>
+        | UncertaintyYoungest           of exact:float<OldDate.calYearBP>
         | ExtentEarliest
         | ExtentEarliestUncertainty
         | ExtentLatest

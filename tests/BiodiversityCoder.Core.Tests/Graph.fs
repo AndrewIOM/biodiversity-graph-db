@@ -8,7 +8,7 @@ open BiodiversityCoder.Core.GraphStructure
 module ``When making a graph`` =
 
     let g : Graph.Graph<Node,Relation> = Graph.empty
-    let outcomeNode = OutcomeNode(MeasureNode(Outcomes.BiodiversityMeasures.Abundance))
+    let outcomeNode = OutcomeNode(MeasureNode(Outcomes.Biodiversity.Abundance))
 
     [<Fact>]
     let ``it starts with no nodes`` () =
@@ -30,61 +30,33 @@ module ``When making a graph`` =
                 |> Graph.addNode (1, outcomeNode) |> ignore)
         
 
-module ``when seeding the graph`` =
+module ``When lookup up relation constraints`` =
 
-    let x = 2
+    open BiodiversityCoder.Core.Population
 
-// Auto-scaffold the interface based on types?
+    let g : Graph.Graph<Node,Relation> = Graph.empty
 
+    let relate relation g =
+        result {
+                let! plantae = FieldDataTypes.Text.createShort "Plantae"
+                let graph = 
+                    g |> Graph.addNodeData [
+                        PopulationNode (TaxonomyNode Taxonomy.Life)
+                        PopulationNode (TaxonomyNode <| Taxonomy.Kingdom plantae)
+                    ] |> fst
+                let! source = Nodes.tryFindTaxon (fun n -> n = Taxonomy.Kingdom plantae) graph, "Could not get source"
+                let! sink = Nodes.tryFindTaxon (fun n -> n = Taxonomy.Life) graph, "Could not get sink"
+                return! Relations.addRelation source sink relation 1 graph
+            }
 
-// module TestGraph =
+    [<Fact>]
+    let ``can add a valid relation`` () =
+        match g |> relate (Population IsA) with
+        | Ok g -> Assert.True(g |> Seq.head |> snd |> Seq.isEmpty)
+        | Error _ -> Assert.True(false)
 
-//     open Graph
-//     open GraphStructure
-
-//     open Exposure.TemporalIndex
-
-//     let seedGraph () =
-
-//         let g : Graph<Node,Relation> ref = ref Graph.empty
-
-//         // Population: life node
-//         let taxonRoot = Population.Taxonomy.Life
-
-//         // Exposure: Holocene time index
-//         let timeIndexNodes = [ 0 .. 14000 ] |> List.map createTimeNode
-//         let holoceneLabel = SliceLabelNode <| { Name = "Holocene" }
-
-//         // Outcomes: basic measures
-//         let outcomes = [
-//             Outcomes.BiodiversityMeasures.Abundance
-//             Outcomes.BiodiversityMeasures.PresenceAbsence
-//         ]
-
-//         g
-//         //|> Graph.addNodeData timeIndexNodes
-//         //|> Graph.addRelation holocene
-
-    
-
-    //let makeGraph =
-
-    //    let g = ref Graph.empty
-
-    //    let linkedIds = ref []
-
-    //    let nodes = [ SourceDocumentNode; TimePointNode; SourceDocumentNode ]
-
-    //    g.Value |>
-
-//module Example =
-    
-//    let holocene = { Name = "Holocene" }
-    
-//    let timeNodes =
-//        [ 0 .. 14000 ]
-//        |> List.map(fun i -> CalYear <| i * 1<calYearBP>)
-
-//    let rel =
-//        timeNodes |> List.map(fun n -> Contains (holocene,n))
-
+    [<Fact>]
+    let ``errors on invalid relation`` () =
+        match g |> relate (Population HasLabel) with
+        | Ok _ -> Assert.True(false)
+        | Error _ -> Assert.True(true)

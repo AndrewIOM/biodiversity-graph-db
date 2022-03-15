@@ -59,8 +59,8 @@ module Seed =
         
         // Outcomes: basic measures
         let outcomes = [
-            OutcomeNode(MeasureNode Outcomes.BiodiversityMeasures.Abundance)
-            OutcomeNode(MeasureNode Outcomes.BiodiversityMeasures.PresenceAbsence)
+            OutcomeNode(MeasureNode Outcomes.Biodiversity.Abundance)
+            OutcomeNode(MeasureNode Outcomes.Biodiversity.PresenceAbsence)
         ]
 
         // Add basic nodes without relations.

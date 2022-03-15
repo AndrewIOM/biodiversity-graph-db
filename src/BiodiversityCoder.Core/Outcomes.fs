@@ -2,15 +2,15 @@
 
 module Outcomes =
 
-    /// Types that represent the measured outcomes
-    /// of the exposure.
+    /// Types that represent measured outcomes.
+    module Biodiversity =
 
-    module BiodiversityMeasures =
+        open FieldDataTypes
 
-        type MeasureNode =
+        type BiodiversityDimensionNode =
+            | Richness
+            | DiversityBeta
+            | Evenness
             | Abundance
             | PresenceAbsence
-
-    /// Relations that go from the exposure elements as the source
-    //type OutcomeNodeRelation = 
-    //    | ?
+            | OtherBiodiversityDimension of Text.ShortText
