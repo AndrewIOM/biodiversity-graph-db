@@ -1,6 +1,8 @@
 Palaeo-Biodiversity Indicators - Graph Database
 ---
 
+[![DOI](https://zenodo.org/badge/465737978.svg)](https://zenodo.org/badge/latestdoi/465737978)
+
 A graph database designed to represent biodiversity indicators within the palaeoecological and palaeoenvironmental record.
 
 The following core components exist in the graph:
