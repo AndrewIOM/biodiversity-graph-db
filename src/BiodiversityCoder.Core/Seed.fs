@@ -13,7 +13,8 @@ module Seed =
     /// 'occurrence' node ('ProxiedTaxonNode')
     let testHyperEdge (graph:Graph.Graph<Node,Relation>) =
         result {
-            let proxyNode = BioticProxies.Morphotype (BioticProxies.Microfossil ("pollen", "salix"))
+            let! morphotype = Text.createShort "salix"
+            let proxyNode = BioticProxies.Morphotype (BioticProxies.Microfossil (BioticProxies.Pollen, morphotype))
 
             let! inferSource = Text.create "Moore 1987. Pollen of the British Isles."
             let inferNode = BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas inferSource
@@ -78,10 +79,8 @@ module Seed =
             let! sink = Nodes.tryFindYear year graph, "Could not get year node"
             return! Relations.addRelation source sink relation 1 graph
         }
-
-        // TODO add 'Next' relations to time nodes.
-
+        
         graph 
-        |> Result.bind (addTimeRelation 11650<calYearBP> (Exposure EarliestTime))
-        |> Result.bind (addTimeRelation 0<calYearBP> (Exposure LatestTime))
+        |> Result.bind (addTimeRelation 11650<OldDate.calYearBP> (Exposure EarliestTime))
+        |> Result.bind (addTimeRelation 0<OldDate.calYearBP> (Exposure LatestTime))
         |> Result.bind testHyperEdge

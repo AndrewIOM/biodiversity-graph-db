@@ -14,8 +14,14 @@ module Sources =
         Volume: int
         Number: int
         Pages: int * int
-        Month: Month
+        Month: string
+        DataAvailability: DataAvailability option
     }
+
+    and DataAvailability =
+        | AtDoiClosed of System.Uri
+        | AtDoiOpen of System.Uri
+        | NotAttachedToSource
 
     type GreySourceNode = {
         Contact: Person
@@ -33,22 +39,13 @@ module Sources =
     type SourceNode =
         | Bibliographic of ArticleMetadataNode
         | GreyLiterature of GreySourceNode
-        | DarkData
+        | DarkData of DarkDataNode
 
     type SourceNodeRelation =
         | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode
 
     and SourceRelation =
         | HasTemporalExtent
-
-    // TODO Use this somewhere.
-    type DataAvailability =
-        | Unavailable
-        | FullOnline of System.Uri
-        | Paywall of System.Uri
-        | Doi of System.Uri
-        | OnRequest
-
 
 
 module BibtexParser =
@@ -66,13 +63,14 @@ module BibtexParser =
             |> Seq.cast<Match>
             |> Seq.map(fun m ->
                 Bibliographic {
-                    Author = m.Groups.[2].Value
-                    Title = m.Groups.[3].Value
-                    Journal = m.Groups.[4].Value
+                    Author = Text.create m.Groups.[2].Value |> Result.toOption
+                    Title = Text.create m.Groups.[3].Value |> Result.toOption
+                    Journal = Text.createShort m.Groups.[4].Value |> Result.toOption
                     Year = int m.Groups.[5].Value
                     Volume = int m.Groups.[6].Value
                     Number = int m.Groups.[7].Value
                     Pages = int m.Groups.[8].Value, int m.Groups.[9].Value
                     Month = m.Groups.[10].Value
+                    DataAvailability = None
                 }) |> Seq.toList |> Ok
         else Error "No sources identified"

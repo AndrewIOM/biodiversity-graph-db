@@ -70,28 +70,38 @@ module FieldDataTypes =
             | Arctic
 
     [<RequireQualifiedAccess>]
+    module StratigraphicSequence =
+
+        [<Measure>] type cm
+
+        type Depth = private Depth of float<cm>
+
+        let createDepth i =
+            if i > 0. then Ok (Depth (i * 1.<cm>)) else Error "Depth cannot be negative"
+
+
+    [<RequireQualifiedAccess>]
     module OldDate =
 
-        /// Based on 1950 as year zero
-        [<Measure>]
-        type calYearBP
+        /// Calibrated dates where 1950 is year zero
+        [<Measure>] type calYearBP
 
-        type Date =
-        | CollectionDate of int<CalYr>
-        | Radiocarbon of int<YBP>
-        | Lead210 of int<YBP>
+        /// Uncalibrated radiocarbon dates are reported in
+        /// uncalibrated years before present 
+        [<Measure>] type uncalYearBP
 
+        /// A calendar date
+        [<Measure>] type AD
+        [<Measure>] type BC
 
-    // TODO implement types that can be rendered as fields,
-    // and also hold values without having to validate in all
-    // the node and relation types individually.
-
-    let date = System.DateTime
+        type OldDate =
+        | CollectionDate of float<AD>
+        | RadiocarbonCalibrated of float<calYearBP> * calibrationCurve:Text.ShortText
+        | RadiocarbonUncalibrated of float<uncalYearBP>
+        | Lead210 of float<calYearBP>
 
     type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
-
-    type Person = FirstName * LastName
-
+    type Person = { FirstName: Text.ShortText; LastName: Text.ShortText }
     type License = License //?
 
 /// A result computation expression. 
@@ -148,6 +158,11 @@ module Result =
 
     let switch f = 
         f >> succeed
+
+    let toOption result =
+        match result with
+        | Ok r -> Some r
+        | Error _ -> None
 
 module List =
 

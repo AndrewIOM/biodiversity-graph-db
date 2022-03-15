@@ -7,7 +7,6 @@ module Population =
         open FieldDataTypes
 
         /// Broad taxonomic group of a taxon
-        /// TODO Use this
         type TaxonomicGroup =
             | Amphibians
             | Birds
@@ -36,7 +35,7 @@ module Population =
         type VernacularTaxonLabelNode = {
             Label: Text.ShortText
             Language: LanguageCode.LanguageCode
-            Source: Text.Text // TODO more accurate representation required.
+            Source: Text.Text
         }
 
 
@@ -55,12 +54,19 @@ module Population =
 
         type BioticProxyNode =
             | Morphotype of Morphotype
-            | AncientDNA of Text.ShortText
-            | DirectIdentification
+            | AncientDNA of taxon:Text.ShortText
+            | DirectIdentification of taxon:Text.ShortText
 
         and Morphotype =
-            | Microfossil of group:string * name:string
+            | Microfossil of proxyGroup:MicrofossilGroup * morphotypeName:Text.ShortText
+            | Fossil of morphotypeName: Text.ShortText
 
+        and MicrofossilGroup =
+            | Pollen
+            | PlantMacrofossil
+            | Diatom
+            | Ostracod
+            | OtherMicrofossil of Text.ShortText
 
     /// A hyper-edge representing the relation between a biotic proxy and
     /// taxon, which is only relevant within a particular study timeline context.
@@ -91,7 +97,7 @@ module Population =
             | PeatCore
             | Subfossil
             | LivingOrganism
-            | Other of Text.ShortText
+            | OtherOrigin of Text.ShortText
 
 
     /// Relations that go from the exposure elements as the source

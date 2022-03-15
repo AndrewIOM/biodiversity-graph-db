@@ -7,17 +7,35 @@ module Exposure =
     /// Temporal dimensions of a study or dataset.
     module StudyTimeline =
     
-        /// Represents 
+        /// An individual date made for a point in a discontinuous
+        /// time-series, for example a stratigraphic sequence.
         type IndividualDateNode = {
             TimeEstimate: float<OldDate.calYearBP>
+            Date: OldDate.OldDate
+            MaterialDated: Text.ShortText
+            SampleDepth: StratigraphicSequence.Depth option
+            Discarded: bool
         }
     
-        type IndividualTimelineNode = float
+        /// Defines an individual temporal extent from a study and place,
+        /// as defined within the research itself (not reinterpreted).
+        type IndividualTimelineNode =
+            | Continuous of TemporalResolution
+            | Discontinuous of TemporalResolution * Hiatus list
+
+        and TemporalResolution =
+            /// time series that have even timesteps, for example tree ring data.
+            | Regular of float<OldDate.calYearBP>
+            /// time series that have uneven timesteps, for example sedimentary data.
+            | Irregular
+        
+        and Hiatus = float<OldDate.calYearBP> * float<OldDate.calYearBP>
+
 
     /// The temporal index handles relations between calendar-based / qualitative-based
     /// dates in the past and occurrence data.
     module TemporalIndex =
-                
+
         type CalYearNode = private CalYear of int<OldDate.calYearBP>
 
         let private unwrap (CalYear c) = c

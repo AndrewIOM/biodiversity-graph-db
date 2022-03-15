@@ -32,17 +32,16 @@ module GraphVisualisation =
         |> HTML.toEmbeddedHTML
 
 
-module Test =
+module App =
 
     type Model =
         {
-            x: string
             Graph: Graph.Graph<GraphStructure.Node,GraphStructure.Relation>
         }
 
     let initModel =
         match Seed.initGraph() with
-        | Ok g ->  { x = ""; Graph = g }
+        | Ok g ->  { Graph = g }
         | Error e -> failwithf "Error making graph: %s" e
 
     type Message =
@@ -55,12 +54,10 @@ module Test =
     let view model dispatch =
         div [] [
             RawHtml (GraphVisualisation.view model.Graph)
-            text "Hello, world!"
         ]
-        
 
 type MainApp() =
-    inherit ProgramComponent<Test.Model, Test.Message>()
+    inherit ProgramComponent<App.Model, App.Message>()
 
     override this.Program =
-        Program.mkSimple (fun _ -> Test.initModel) Test.update Test.view
+        Program.mkSimple (fun _ -> App.initModel) App.update App.view
