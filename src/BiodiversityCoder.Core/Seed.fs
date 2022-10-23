@@ -13,7 +13,7 @@ module Seed =
     /// 'occurrence' node ('ProxiedTaxonNode')
     let testHyperEdge (graph:Graph.Graph<Node,Relation>) =
         result {
-            let! morphotype = Text.createShort "salix"
+            let! morphotype = Text.createShort "Salix"
             let proxyNode = BioticProxies.Morphotype (BioticProxies.Microfossil (BioticProxies.Pollen, morphotype))
 
             let! inferSource = Text.create "Moore 1987. Pollen of the British Isles."
@@ -51,9 +51,12 @@ module Seed =
         let addTimeIndexNodes graph = 
             [ 0 .. 14000 ] 
             |> List.map createTimeNode 
-            |> List.mapResult id
+            |> Result.ofList
+            |> fun x -> printfn "Made ID"; x
             |> Result.map(List.map(fun n -> ExposureNode(YearNode n)))
-            |> Result.map (fun n -> graph |> Graph.addNodeData n)
+            |> Result.map (fun (n: Node list) -> 
+                printfn "Adding time nodes..."
+                graph |> Graph.addNodeData n)
 
         let holoceneLabel = SliceLabelNode { Name = "Holocene" }
         
@@ -71,7 +74,8 @@ module Seed =
                 ExposureNode holoceneLabel
             ] |> fst
             |> Graph.addNodeData outcomes |> fst
-            |> addTimeIndexNodes |> Result.map fst
+            |> addTimeIndexNodes 
+            |> Result.map fst
 
         // Add core relations
         let addTimeRelation year relation graph = result {
@@ -80,7 +84,7 @@ module Seed =
             return! Relations.addRelation source sink relation 1 graph
         }
         
-        graph 
+        graph
         |> Result.bind (addTimeRelation 11650<OldDate.calYearBP> (Exposure EarliestTime))
         |> Result.bind (addTimeRelation 0<OldDate.calYearBP> (Exposure LatestTime))
-        |> Result.bind testHyperEdge
+        // |> Result.bind testHyperEdge

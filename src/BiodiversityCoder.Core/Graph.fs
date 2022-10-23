@@ -226,15 +226,11 @@ module GraphStructure =
                     |> Seq.tryFind (fun uc -> uc.Name = caseName)
                 printfn "constraint is %A" constraintCase
                 match constraintCase with
-                | Some c -> 
-                    let field = c.GetFields().[paramIndex]
+                | Some (c: UnionCaseInfo) -> 
+                    let field: System.Reflection.PropertyInfo = c.GetFields().[paramIndex]
                     let nodeType =
                         let baseType = (snd node).GetType().BaseType
                         if baseType = typeof<System.Object> then (snd node).GetType() else baseType
-                    printfn "field is %A" field
-                    printfn "node type is %A" nodeType
-                    printfn "propetty type is %A" field.PropertyType
-                    printfn "Is match: %A" (field.PropertyType = nodeType)
                     field.PropertyType = nodeType
                 | None -> false
                 

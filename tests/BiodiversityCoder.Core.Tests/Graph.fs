@@ -28,7 +28,16 @@ module ``When making a graph`` =
                 g 
                 |> Graph.addNode (1, outcomeNode)
                 |> Graph.addNode (1, outcomeNode) |> ignore)
-        
+
+module ``When seeding a graph`` =
+
+    [<Fact>]
+    let ``there are no errors`` () =
+        let result = Seed.initGraph()
+        match result with
+        | Ok _ -> Assert.True(true)
+        | Error e -> Assert.True(false, e)
+
 
 module ``When lookup up relation constraints`` =
 
