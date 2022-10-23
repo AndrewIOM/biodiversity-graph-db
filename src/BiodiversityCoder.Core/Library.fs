@@ -41,12 +41,6 @@ module App =
         | Exposure
         | Outcome
 
-    type NodeViewModel =
-        | DU of string * NodeViewModel
-        | Fields of Map<string,NodeViewModel>
-        | FieldValue of string
-        | NotEnteredYet
-
     type Model =
         {
             Page: Page
@@ -70,38 +64,11 @@ module App =
         | SyncFileSystem
         | ChangeImportText of string
         | ImportBibtex
-        | RelateNodes of string * string * GraphStructure.ProposedRelation
-        | AddOrUpdateNode
-        | AddProxiedTaxon of Population.ProxiedTaxon.ProxiedTaxonHyperEdge
-        | EnterNodeCreationData of string * NodeViewModel
+        | FormMessage of FormMessage
 
-    /// Crawl the new view models by level from top to bottom, replacing
-    /// data in the old master viewmodel or merging where appropriate.
-    let rec updateNodeViewModel master (newMaster: NodeViewModel) = 
-        match newMaster with
-        | DU (case1,newValue) -> 
-            match master with
-            | DU(case2,_) -> 
-                if case1 = case2 
-                then DU(case2, updateNodeViewModel newValue newValue)
-                else DU(case1, updateNodeViewModel NotEnteredYet newValue)
-            | NotEnteredYet -> DU(case1, updateNodeViewModel newValue newValue)
-            | FieldValue _
-            | Fields _ -> DU(case1, updateNodeViewModel newValue newValue)
-        | NotEnteredYet -> NotEnteredYet
-        | FieldValue v -> FieldValue v
-        | Fields newFields ->
-            // Merge fields together if both field types.
-            match master with
-            | DU _
-            | NotEnteredYet
-            | FieldValue _ -> Fields(newFields |> Map.map(fun _ vm -> updateNodeViewModel NotEnteredYet vm))
-            | Fields oldFields ->
-                if newFields.Count <> 1 then Fields newFields
-                else
-                    let k = newFields |> Seq.head
-                    let x = oldFields |> Map.add k.Key k.Value
-                    Fields x
+    // let cre = field.PropertyType.GetMember("Create")
+    // if cre.Length <> 1 then empty
+    // else
 
     let update (openFolder:unit -> Task<string>) message model =
         match message with
@@ -122,143 +89,24 @@ module App =
             match Storage.loadOrInitGraph folder with
             | Ok g -> { model with Graph = g }, Cmd.none
             | Error e -> { model with Error = Some e }, Cmd.none
-        | RelateNodes(_, _, _) -> failwith "Not Implemented"
-        | AddProxiedTaxon(_) -> failwith "Not Implemented"
+        | FormMessage m ->
+            match m with
+            | RelateNodes(_, _, _) -> failwith "Not Implemented"
+            | AddProxiedTaxon(_) -> failwith "Not Implemented"
 
-        | EnterNodeCreationData(formId, vm) -> 
-            let updatedVm = 
-                match model.NodeCreationViewModels |> Map.tryFind formId with
-                | Some formData -> updateNodeViewModel formData vm
-                | None -> updateNodeViewModel NotEnteredYet vm
-            { model with NodeCreationViewModels = model.NodeCreationViewModels |> Map.add formId updatedVm
-                         Error = Some <| sprintf "%A" vm }, Cmd.none
+            | EnterNodeCreationData(formId, vm) -> 
+                let updatedVm = 
+                    match model.NodeCreationViewModels |> Map.tryFind formId with
+                    | Some formData -> Merge.updateNodeViewModel formData vm
+                    | None -> Merge.updateNodeViewModel NotEnteredYet vm
+                { model with NodeCreationViewModels = model.NodeCreationViewModels |> Map.add formId updatedVm; Error = Some <| sprintf "%A" vm }, Cmd.none
 
-        | AddOrUpdateNode -> 
-            // 1. Gather fields required for this node (where are these stored in view model?)
-            // 2. Validate by converting into internal graph types (e.g. Text.ShortText)
-            // 3. Submit change to filesystem-based graph.
-            // 4. Handle any errors or return OK.
-            failwith "Not Implemented"
-
-    // Can we generate a form field for node creation from a type definition for a node?
-    module ViewGen =
-
-        /// Generate a select box for all possible cases when a DU.
-        let selectCase t selected dispatch =
-            select [ bind.change.string selected (fun s -> s |> dispatch)] [
-                forEach (Reflection.FSharpType.GetUnionCases(t)) <| fun c ->
-                option [ attr.name c.Name ] [ text c.Name ]
-            ]
-
-        let genField (field:System.Reflection.PropertyInfo) binding =
-            div [] [
-                label [] [ text field.Name ]
-                // TODO customise input depending on type
-                input [ binding ]
-            ]
-            // let cre = field.PropertyType.GetMember("Create")
-            // if cre.Length <> 1 then empty
-            // else
-
-        open Population
-
-        let renderPropertyInfo f (field: System.Reflection.PropertyInfo) (nestedVm:NodeViewModel -> NodeViewModel) dispatch makeField' formId =
-            // Figure out if the field already has a value.
-            cond (f |> Map.tryFind field.Name) <| function
-            | Some v ->
-                // Field has an existing value
-                cond v <| function
-                | DU _ -> 
-                    // Field is a DU with a select value already set. Render select box and possible value.
-                    makeField' v nestedVm field.PropertyType dispatch
-                | FieldValue existingValue -> 
-                    // Field is a simple type with a value already set. Render with value.
-                    genField field (bind.input.string (string existingValue) (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(s))) |> dispatch))
-                | Fields _
-                | NotEnteredYet ->
-                    // Field does not have an existing value. Render cleanly.
-                    cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
-                    | true -> 
-                        // A field is another DU. Make a nested DU view model.
-                        makeField' NotEnteredYet nestedVm field.PropertyType dispatch
-                    | false -> 
-                        // A field is not a DU. 
-                        genField field (bind.input.string "" (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(s))) |> dispatch))
-            | None ->
-                // Field does not have an existing value. Render cleanly.
-                cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
-                | true -> 
-                    // A field is another DU. Make a nested DU view model.
-                    makeField' NotEnteredYet nestedVm field.PropertyType dispatch
-                | false -> 
-                    // A field is not a DU. 
-                    genField field (bind.input.string "" (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(s))) |> dispatch))
-
-        /// Generate form fields corresponding to a nested node view model.
-        /// Each level may be a DU, which leads to generation of a select box with case options
-        /// and - if a case is selected - generated fields.
-        let rec makeField formId viewModel (nestedVm:NodeViewModel -> NodeViewModel) nestedType dispatch =
-            cond (Reflection.FSharpType.IsUnion(nestedType)) <| function
-            | true -> 
-                // Is a DU. Display a select box to select possible cases.
-                    concat [
-                        cond viewModel <| function
-                        | NotEnteredYet ->
-                            // Nothing entered yet. Display an empty select box for the case.
-                            // A DU case is not yet selected. Don't display any fields.
-                            selectCase nestedType "" (fun s -> EnterNodeCreationData(formId,nestedVm(DU(s,NotEnteredYet))) |> dispatch)
-                        | DU (selectedCase, vm) ->
-                            // A DU case is selected. Display its fields for editing.
-                            concat [
-                                selectCase nestedType selectedCase (fun (s: string) -> EnterNodeCreationData(formId,nestedVm(DU(s,vm))) |> dispatch)
-                                cond (Reflection.FSharpType.GetUnionCases(nestedType) |> Seq.tryFind(fun c -> c.Name = selectedCase)) <| function
-                                | Some s ->
-                                    // Get all of the field's values
-                                    cond vm <| function
-                                    | Fields f ->
-                                        // TODO May be a simple value OR a record type (with lots of fields. Render this as nested fields)...
-                                        forEach (s.GetFields()) <| fun field -> renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId) formId
-                                    | _ ->
-                                        // None of the fields have any entered values yet. Render all of them cleanly.
-                                        forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId) formId
-                                | None -> empty ]
-                        | _ -> 
-                            // Shouldn't be able to have a field when it is a DU.
-                            empty ]
-            | false -> // Is not a DU.
-                cond (Reflection.FSharpType.IsRecord(nestedType)) <| function
-                | true -> // Is an F# record. Generate display for all fields.
-                    cond viewModel <| function
-                    | Fields f ->
-                        // Fields already have some data entered. Render with existing values.
-                        forEach (Reflection.FSharpType.GetRecordFields(nestedType)) <| fun field ->
-                            renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId) formId
-                    | _ ->
-                        // Fields have no data entered yet. Render using blank field view model.
-                        forEach (Reflection.FSharpType.GetRecordFields(nestedType)) <| fun field ->
-                            renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId) formId
-                | false -> empty // Unsupported type (not a record or DU).
-
-        /// Given a node type (maybe a DU or record or normal type),
-        /// generate a set of fields to use for inputting the data.
-        /// Also, generate a placeholder area for the data to bind to in the
-        /// view model, which can then be submitted.
-        let makeNodeForm<'a> (nodeViewModel: NodeViewModel option) dispatch =
-            div [] [
-                cond nodeViewModel <| function
-                | Some vm -> makeField (typeof<'a>).Name vm id typeof<'a> dispatch
-                | None -> makeField (typeof<'a>).Name NotEnteredYet id typeof<'a> dispatch
-                button [ on.click (fun _ -> AddOrUpdateNode |> dispatch) ] [ text "Create" ]
-            ]
-
-        /// Generate a list of select options based on available nodes in the graph.
-        let optionGen nodeType (nodes:Map<string, Map<string, string>>) =
-            cond (nodes |> Map.tryFind nodeType) <| function
-                | None -> empty
-                | Some nodes ->
-                    forEach nodes <| fun node ->
-                        option [ attr.value node.Key ] [ text node.Value ]
-
+            | AddOrUpdateNode -> 
+                // 1. Gather fields required for this node (where are these stored in view model?)
+                // 2. Validate by converting into internal graph types (e.g. Text.ShortText)
+                // 3. Submit change to filesystem-based graph.
+                // 4. Handle any errors or return OK.
+                failwith "Not Implemented"
 
     let _class = attr.``class``
 
@@ -287,7 +135,7 @@ module App =
                         | Page.Population -> 
                             div [] [ 
                                 text "Make a population context node."
-                                ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") dispatch
+                                ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") (FormMessage >> dispatch)
                                 textf "%A" model.NodeCreationViewModels
                                 textf "\n Model is: %A" model.Error
                             ]
@@ -297,7 +145,7 @@ module App =
 
                             div [] [ 
                                 text "Make a source node."
-                                ViewGen.makeNodeForm<Sources.SourceNode> (model.NodeCreationViewModels |> Map.tryFind "SourceNode") dispatch
+                                ViewGen.makeNodeForm<Sources.SourceNode> (model.NodeCreationViewModels |> Map.tryFind "SourceNode") (FormMessage >> dispatch)
                                 textf "%A" model.NodeCreationViewModels
                                 textf "\n Model is: %A" model.Error
                             ]

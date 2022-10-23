@@ -2,6 +2,22 @@ namespace BiodiversityCoder.Core
 
 open System
 
+[<AutoOpen>]
+module Attributes =
+
+    // Allows setting properties on record fields.
+    [<AttributeUsage(AttributeTargets.Property)>]
+    type Name(x: string) =
+        inherit Attribute()
+        member _.value = x
+
+    /// An attribute to display guidance text when specifying data for a 
+    /// property or field.
+    type HelpAttribute(text: string) =
+        inherit Attribute()
+        with member __.Text = text
+
+
 // Services shared with MAUI
 type IFolderPicker =
     abstract member PickFolder : unit -> System.Threading.Tasks.Task<string>

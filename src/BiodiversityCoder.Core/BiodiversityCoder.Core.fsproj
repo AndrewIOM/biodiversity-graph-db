@@ -12,6 +12,7 @@
     <Compile Include="Graph.fs" />
     <Compile Include="Seed.fs" />
     <Compile Include="Storage.fs" />
+    <Compile Include="Forms.fs" />
     <Compile Include="Library.fs" />
   </ItemGroup>
   <ItemGroup>

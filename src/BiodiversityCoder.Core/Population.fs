@@ -86,9 +86,13 @@ module Population =
         open FieldDataTypes
 
         type ContextNode = {
+            [<Help("A short description for the place.")>]
             Name: Text.ShortText
+            [<Help("Enter the location for the specific timeline in the granularity specified in the text. Select 'Site' or 'Area' to specify ")>]
             SamplingLocation: Geography.SamplingLocation
+            [<Help("The parent material from which the 'Outcome' (biodiversity measure) has been measured. Example: pollen from a midden is subfossil.")>]
             SampleOrigin: SampleOrigin
+            [<Help("An optional short description of the characteristics of the location of the time-series. Example: lake surrounded by Salix and Betula tall shrubs.")>]
             SampleLocationDescription: Text.Text option
         }
 
