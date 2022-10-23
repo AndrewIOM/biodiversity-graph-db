@@ -1,5 +1,5 @@
 ﻿using Microsoft.AspNetCore.Components.WebView.Maui;
-using BiodiversityCoder.Data;
+using BiodiversityCoder.Core;
 
 namespace BiodiversityCoder;
 
@@ -9,15 +9,20 @@ public static class MauiProgram
 	{
 		var builder = MauiApp.CreateBuilder();
 		builder
-			.RegisterBlazorMauiWebView()
 			.UseMauiApp<App>()
 			.ConfigureFonts(fonts =>
 			{
 				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
 			});
 
-		builder.Services.AddBlazorWebView();
-
+		#if WINDOWS
+				builder.Services.AddTransient<IFolderPicker, Platforms.Windows.FolderPicker>();
+		#elif MACCATALYST
+				builder.Services.AddTransient<IFolderPicker, Platforms.MacCatalyst.FolderPicker>();
+		#endif
+		
+		builder.Services.AddMauiBlazorWebView();
+		
 		return builder.Build();
 	}
 }
