@@ -53,7 +53,7 @@ module BibtexParser =
     open System.Text.RegularExpressions
     open Sources
     
-    let articleRegex = "@article{(.*),\nauthor = {(.*)},\ntitle = {{(.*)}},\njournal = {(.*)},\nyear = {(.*)},\nvolume = {(.*)},\nnumber = {(.*)},\npages = {(.*)--(.*)},\nmonth = (.*\n)}"
+    let articleRegex = "@article{(.*),\nauthor = {(.*)},\ntitle = {(.*)},\njournal = {(.*)},\nyear = (.*),\nvolume = {(.*)},\nnumber = {(.*)},\npages = {(.*)--(.*)},\nmonth = {(.*)}}"
     
     let parse (bibText:string) =
         if Regex.IsMatch(bibText, articleRegex)

@@ -2,6 +2,10 @@ namespace BiodiversityCoder.Core
 
 open System
 
+// Services shared with MAUI
+type IFolderPicker =
+    abstract member PickFolder : unit -> System.Threading.Tasks.Task<string>
+
 /// Contains types that represent data fields within
 /// the graph and coding interface.
 module FieldDataTypes =
@@ -12,6 +16,9 @@ module FieldDataTypes =
 
         type ShortText = private ShortText of string
         type Text = private Text of string
+
+        type ShortText with member this.Value =  this |> (fun (ShortText t) -> t)
+        type Text with member this.Value =  this |> (fun (Text t) -> t)
 
         let createShort txt =
             if not (String.IsNullOrEmpty txt)
@@ -24,6 +31,9 @@ module FieldDataTypes =
             if not (String.IsNullOrEmpty txt)
             then Ok (Text txt)
             else Error "Short text must not be empty"
+
+        type ShortText with static member Create = createShort
+        type Text with static member Create = create
 
     /// Representation of cultures (e.g. for vernacular names)
     [<RequireQualifiedAccess>]
@@ -164,13 +174,10 @@ module Result =
         | Ok r -> Some r
         | Error _ -> None
 
-module List =
-
-    let retn = Ok
-    let rec mapResult f list =
-        let cons head tail = head :: tail
-        match list with
-        | [] -> 
-            retn []
-        | head::tail ->
-            retn cons <*> (f head) <*> (mapResult f tail)
+    let ofList arg = 
+        (arg, Ok[]) ||> List.foldBack (fun t s ->
+        match t, s with
+        | Ok x, Ok xs -> Ok(x::xs)
+        | Error e, Ok _ -> Error e
+        | Ok _, Error es -> Error es
+        | Error e, Error es -> Error es )
