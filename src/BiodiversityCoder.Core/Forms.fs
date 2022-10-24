@@ -3,14 +3,103 @@ namespace BiodiversityCoder.Core
 type NodeViewModel =
     | DU of string * NodeViewModel
     | Fields of Map<string,NodeViewModel>
-    | FieldValue of string
+    | FieldValue of SimpleValue
     | NotEnteredYet
 
 type FormMessage =
-    | RelateNodes of string * string * GraphStructure.ProposedRelation
-    | AddOrUpdateNode
-    | AddProxiedTaxon of Population.ProxiedTaxon.ProxiedTaxonHyperEdge
     | EnterNodeCreationData of string * NodeViewModel
+    | RelateNodes of string * string * GraphStructure.ProposedRelation
+    | AddOrUpdateNode of System.Type
+    | AddProxiedTaxon of Population.ProxiedTaxon.ProxiedTaxonHyperEdge
+
+module Create =
+    
+    open Microsoft.FSharp.Reflection
+    open System.Reflection
+
+    let private (|SomeObj|_|) =
+        let ty: System.Type = typedefof<option<_>>
+        fun (a:obj) ->
+            let aty = a.GetType()
+            let v = aty.GetProperty("Value")
+            if aty.IsGenericType && aty.GetGenericTypeDefinition() = ty then
+                if a = null then None
+                else Some(v.GetValue(a, [| |]))
+            else None
+
+    let private bind (x : obj) rest =   
+        match x with    
+        | SomeObj(x1) -> Ok (rest x1)
+        | _ -> Error "Invalid type"
+
+    let rec createFromViewModel (objType:System.Type) (viewModel: NodeViewModel) : Result<obj,string> = 
+        match viewModel with
+        | DU (case1,newValue) -> 
+            // Find existing case with this name.
+            match FSharpType.GetUnionCases(objType) |> Seq.tryFind(fun x -> x.Name = case1) with
+            | Some caseInfo ->
+                // Get value for each field in the union case.
+                let args =
+                    caseInfo.GetFields() |> Array.map(fun f ->
+                        match newValue with
+                        | NotEnteredYet -> Error "No DU information selected."
+                        | DU (case2, newValue2) -> 
+                            if FSharpType.IsUnion(objType) then
+                                match FSharpType.GetUnionCases(objType) |> Seq.tryFind(fun x -> x.Name = case2) with
+                                | Some caseInfo -> createFromViewModel (caseInfo.GetType()) newValue2
+                                | None -> Error "The DU case as specified in the view model does not exist"
+                            else Error "The type is not a DU as specified in the view model"
+                        | FieldValue _ -> createFromViewModel f.PropertyType newValue
+                        | Fields (newFields: Map<string,NodeViewModel>) ->
+                            match newFields |> Map.tryFind f.Name with
+                            | Some newField -> createFromViewModel f.PropertyType newField
+                            | None -> Error (sprintf "Value not found for DU field %s" f.Name)
+                    ) |> Array.toList |> Result.ofList
+                args |> Result.lift(fun args -> Reflection.FSharpValue.MakeUnion(caseInfo, args |> List.toArray))
+            | None -> Error (sprintf "The DU case %s does not exist on this type." case1)
+        | NotEnteredYet -> Error "No data has been entered yet"
+        | FieldValue v ->
+            // If the type has a Create static method, use this to make the value.
+            // Otherwise, just pass through the value directly (if there is a type match..)
+            printfn "Need to create from type %s" objType.Name
+            let create = objType.GetMember("TryCreate")
+            match create.Length with
+            | 1 ->
+                printfn "Create method is %A" create.[0]
+                printfn "Creating with type %s" objType.Name
+                // Make using Create member.
+                let created = objType.InvokeMember("TryCreate", BindingFlags.InvokeMethod, null, null, [|v|])
+                bind created id
+            | _ ->
+                printfn "Could not find create method for type %s" objType.Name
+                match v with
+                | Number n -> n :> obj |> Ok
+                | Text t -> t :> obj |> Ok
+                | Date t -> t :> obj |> Ok
+                | Time t -> t :> obj |> Ok
+        | Fields newFields ->
+            let recordFields = Reflection.FSharpType.GetRecordFields(objType)
+            let values = recordFields |> Array.map(fun f ->
+                if newFields |> Map.containsKey f.Name 
+                then 
+                    match newFields.[f.Name] with
+                    | FieldValue _ -> createFromViewModel f.PropertyType newFields.[f.Name]
+                    | NotEnteredYet -> Error "A value was missing"
+                    | Fields newFields ->
+                        // TODO
+                        Error "Not implemented"
+                    | DU (case, vm2) -> 
+                        if FSharpType.IsUnion(objType) then
+                            match FSharpType.GetUnionCases(objType) |> Seq.tryFind(fun x -> x.Name = case) with
+                            | Some caseInfo -> createFromViewModel (caseInfo.GetType()) vm2
+                            | None -> Error "The DU case as specified in the view model does not exist"
+                        else Error "The type is not a DU as specified in the view model"
+                else Error "Some properties are missing" ) |> Array.toList |> Result.ofList
+            match values with
+            | Ok values ->
+                let created = Reflection.FSharpValue.MakeRecord(objType, values |> List.toArray)
+                created |> Ok
+            | Error e -> Error e
 
 module Merge =
 
@@ -94,7 +183,7 @@ module ViewGen =
                 makeField' (Some field) v nestedVm field.PropertyType dispatch
             | FieldValue existingValue -> 
                 // Field is a simple type with a value already set. Render with value.
-                genField field (bind.input.string (string existingValue) (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(s))) |> dispatch))
+                genField field (bind.input.string (string existingValue) (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(Text s))) |> dispatch))
             | Fields _
             | NotEnteredYet ->
                 // Field does not have an existing value. Render cleanly.
@@ -111,7 +200,7 @@ module ViewGen =
                             renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
                     | false ->
                         // Is not a DU or record. Render simple field.
-                        genField field (bind.input.string "" (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(s))) |> dispatch))
+                        genField field (bind.input.string "" (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(Text s))) |> dispatch))
         | None ->
             // Field does not have an existing value. Render cleanly.
             cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
@@ -127,7 +216,7 @@ module ViewGen =
                         renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
                 | false ->
                     // Is not a DU or record. Render simple field.
-                    genField field (bind.input.string "" (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(s))) |> dispatch))
+                    genField field (bind.input.string "" (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(Text s))) |> dispatch))
 
     /// Generate form fields corresponding to a nested node view model.
     /// Each level may be a DU, which leads to generation of a select box with case options
@@ -183,7 +272,7 @@ module ViewGen =
             cond nodeViewModel <| function
             | Some vm -> makeField (typeof<'a>).Name None vm id typeof<'a> dispatch
             | None -> makeField (typeof<'a>).Name None NotEnteredYet id typeof<'a> dispatch
-            button [ _class "btn btn-primary"; on.click (fun _ -> AddOrUpdateNode |> dispatch) ] [ text "Create" ]
+            button [ _class "btn btn-primary"; on.click (fun _ -> (typeof<'a>) |> AddOrUpdateNode |> dispatch) ] [ text "Create" ]
         ]
 
     /// Generate a list of select options based on available nodes in the graph.

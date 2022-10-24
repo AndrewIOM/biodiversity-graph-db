@@ -2,6 +2,12 @@ namespace BiodiversityCoder.Core
 
 open System
 
+type SimpleValue =
+    | Number of float
+    | Text of string
+    | Date of DateOnly
+    | Time of TimeOnly
+
 [<AutoOpen>]
 module Attributes =
 
@@ -48,8 +54,8 @@ module FieldDataTypes =
             then Ok (Text txt)
             else Error "Short text must not be empty"
 
-        type ShortText with static member Create = createShort
-        type Text with static member Create = create
+        type ShortText with static member TryCreate s = match s with | SimpleValue.Text s -> createShort s |> Result.toOption | _ -> None
+        type Text with static member TryCreate s = match s with | SimpleValue.Text s -> create s |> Result.toOption | _ -> None
 
     /// Representation of cultures (e.g. for vernacular names)
     [<RequireQualifiedAccess>]

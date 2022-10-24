@@ -49,13 +49,14 @@ module App =
             Error: string option
             NodesByType: Map<string, Map<string, string>>
             NodeCreationViewModels: Map<string, NodeViewModel>
+            NodeCreationValidationErrors: Map<string, (string * string) list>
         }
 
     let initModel =
         // TODO Replace seed with loading mechanism. Only seed if initing a new database.
         match Seed.initGraph() with
-        | Ok g ->  { Graph = g; Import = ""; Error = None; Page = Source; NodesByType = Map.empty; NodeCreationViewModels = Map.empty }, Cmd.none
-        | Error e -> { Graph = []; Import = ""; Error = Some e; Page = Source; NodesByType = Map.empty; NodeCreationViewModels = Map.empty }, Cmd.none
+        | Ok g ->  { Graph = g; Import = ""; Error = None; Page = Source; NodesByType = Map.empty; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        | Error e -> { Graph = []; Import = ""; Error = Some e; Page = Source; NodesByType = Map.empty; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
 
     type Message =
         | SetPage of Page
@@ -101,12 +102,18 @@ module App =
                     | None -> Merge.updateNodeViewModel NotEnteredYet vm
                 { model with NodeCreationViewModels = model.NodeCreationViewModels |> Map.add formId updatedVm; Error = Some <| sprintf "%A" vm }, Cmd.none
 
-            | AddOrUpdateNode -> 
-                // 1. Gather fields required for this node (where are these stored in view model?)
-                // 2. Validate by converting into internal graph types (e.g. Text.ShortText)
+            | AddOrUpdateNode nodeType -> 
                 // 3. Submit change to filesystem-based graph.
                 // 4. Handle any errors or return OK.
-                failwith "Not Implemented"
+                match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
+                | Some (formData: NodeViewModel) -> 
+                    // 2. Validate by converting into internal graph types (e.g. Text.ShortText)
+
+                    // Create.createFromViewModel System.Type.GetType()
+
+                    // Merge.updateNodeViewModel formData vm
+                    model, Cmd.none
+                | None -> model, Cmd.none
 
     let _class = attr.``class``
 
@@ -132,10 +139,26 @@ module App =
                 // 2. Page view
                 div [ _class "col py-3" ] [
                     cond model.Page <| function
-                        | Page.Population -> 
-                            div [] [ 
-                                text "Make a population context node."
+                        | Page.Population -> concat [
+                                h2 [] [ text "Population" ]
+                                p [] [ text "List existing population nodes and create new ones." ]
+                                img [ attr.src "images/population-diagram.png" ]
+                                h3 [] [ text "Context" ]
+                                hr []
+                                p [] [ text "You can relate `timelines` to a spatial context, represented by a Context node." ]
                                 ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") (FormMessage >> dispatch)
+                                h3 [] [ text "Taxonomy Node" ]
+                                hr []
+                                p [] [ text "In our systematic map, biotic proxies are related to real taxa by an inference method. Here, the 'Taxonomy Node' represents a *real* botanical or other taxon. We have pre-populated plant names using a taxonomic backbone." ]
+                                ViewGen.makeNodeForm<Population.Taxonomy.TaxonNode> (model.NodeCreationViewModels |> Map.tryFind "TaxonNode") (FormMessage >> dispatch)
+                                p [] [ text "In addition to the taxon node, there are nodes representing the common or vernacular names of species, genera, or families. Adding these is purely for the purposes of public interpretation of the graph database." ]
+                                ViewGen.makeNodeForm<Population.Taxonomy.VernacularTaxonLabelNode> (model.NodeCreationViewModels |> Map.tryFind "VernacularTaxonLabelNode") (FormMessage >> dispatch)
+                                h3 [] [ text "Biotic proxies" ]
+                                hr []
+                                p [] [ text "Biotic proxies are used to represent morphotypes, fossil remains etc. that are used to proxy species presence, but require further interpretation to connect to a *real* taxon. For example, pollen morphotypes require inference to connect to botanical taxa." ]
+                                ViewGen.makeNodeForm<Population.BioticProxies.BioticProxyNode> (model.NodeCreationViewModels |> Map.tryFind "BioticProxyNode") (FormMessage >> dispatch)
+
+                                
                                 textf "%A" model.NodeCreationViewModels
                                 textf "\n Model is: %A" model.Error
                             ]
