@@ -19,6 +19,7 @@ module ``When converting a view model to an instance`` =
     open BiodiversityCoder.Core.Population.Taxonomy
     open BiodiversityCoder.Core.FieldDataTypes
     open BiodiversityCoder.Core.Population.BioticProxies
+    open BiodiversityCoder.Core.Sources
 
     [<Fact>]
     let ``works with a DU with no fields`` () =
@@ -70,3 +71,29 @@ module ``When converting a view model to an instance`` =
             Assert.Equal(expected, r :?> BioticProxyNode)
         | Error e -> Assert.True(false, e)
 
+    [<Fact>]
+    let ``works with DU containing fields of records and DU types`` () =
+        let vm: Result<obj,string> = 
+            DU("GreyLiterature", Fields([
+                "Item", Fields([
+                    "Contact", Fields([
+                        "FirstName", FieldValue (Text "Hello")
+                        "LastName", FieldValue (Text "Hello")
+                    ] |> Map.ofList)
+                    "License", DU("Creative Commons Attribution 4 International", NotEnteredYet)
+                    "Title", FieldValue (Text "Piece of paper found in a cupboard")
+                    ] |> Map.ofList)
+            ] |> Map.ofList )) |> createFromViewModel (typeof<SourceNode>)
+        match vm with
+        | Ok r -> 
+            let expected = 
+                GreyLiterature {
+                    Contact = {
+                        FirstName = (Text.ShortText.TryCreate(SimpleValue.Text "Hello").Value)
+                        LastName = (Text.ShortText.TryCreate(SimpleValue.Text "Hello").Value)
+                    }
+                    License = ``Creative Commons Attribution 4 International``
+                    Title = (Text.Text.TryCreate(SimpleValue.Text "Piece of paper found in a cupboard").Value)
+                }
+            Assert.Equal(expected, r :?> SourceNode)
+        | Error e -> Assert.True(false, e)

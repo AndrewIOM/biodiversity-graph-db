@@ -109,12 +109,15 @@ module Create =
                     | FieldValue _ -> createFromViewModel f.PropertyType newFields.[f.Name]
                     | NotEnteredYet -> Error "A value was missing"
                     | Fields newFields ->
-                        // TODO
-                        Error "Not implemented"
+                        // A record within a record field.
+                        createFromViewModel f.PropertyType (Fields newFields)
                     | DU (case, vm2) -> 
+                        // Pass through to main method to handle as new type.
                         if FSharpType.IsUnion(f.PropertyType) then
                             match FSharpType.GetUnionCases(f.PropertyType) |> Seq.tryFind(fun x -> x.Name = case) with
-                            | Some caseInfo -> createFromViewModel (caseInfo.GetType()) vm2
+                            | Some caseInfo -> 
+                                // The case exists. Run this properly.
+                                createFromViewModel caseInfo.DeclaringType (DU(case,vm2))
                             | None -> Error "The DU case as specified in the view model does not exist"
                         else Error "The type is not a DU as specified in the view model"
                 else Error "Some properties are missing" ) |> Array.toList |> Result.ofList

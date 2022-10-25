@@ -134,7 +134,22 @@ module FieldDataTypes =
 
     type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
     type Person = { FirstName: Text.ShortText; LastName: Text.ShortText }
-    type License = License //?
+    type License =
+        | ``Public Domain Mark``
+        | ``Creative Commons Public Domain Dedication``
+        | ``Open Data Commons Public Domain Dedication and License``
+        | ``Creative Commons Attribution 4 International``
+        | ``Community Data License Agreement - Permissive``
+        | ``Open Data Commons Attribution License``
+        | ``Creative Commons Attribution-ShareAlike 4 International``
+        | ``Community Data License Agreement – Sharing Version 1``
+        | ``Open Data Commons Open Database License``
+        | ``Creative Commons Attribution-NonCommercial 4 International``
+        | ``Creative Commons Attribution-NoDerivatives 4 International``
+        | ``Creative Commons Attribution-NonCommercial-ShareAlike 4 International``
+        | ``Creative Commons Attribution-NonCommercial-NoDerivatives 4 International``
+        | ``No license specified``
+        | Other of Text.ShortText
 
 /// A result computation expression. 
 /// Source: http://www.fssnip.net/7UJ/title/ResultBuilder-Computational-Expression
