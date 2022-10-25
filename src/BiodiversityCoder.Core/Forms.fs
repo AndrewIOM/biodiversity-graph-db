@@ -33,28 +33,50 @@ module Create =
         | _ -> Error "Invalid type"
 
     let rec createFromViewModel (objType:System.Type) (viewModel: NodeViewModel) : Result<obj,string> = 
+        printfn "Type passed in is %s" objType.Name
         match viewModel with
         | DU (case1,newValue) -> 
             // Find existing case with this name.
             match FSharpType.GetUnionCases(objType) |> Seq.tryFind(fun x -> x.Name = case1) with
             | Some caseInfo ->
                 // Get value for each field in the union case.
-                let args =
-                    caseInfo.GetFields() |> Array.map(fun f ->
-                        match newValue with
-                        | NotEnteredYet -> Error "No DU information selected."
-                        | DU (case2, newValue2) -> 
-                            if FSharpType.IsUnion(objType) then
-                                match FSharpType.GetUnionCases(objType) |> Seq.tryFind(fun x -> x.Name = case2) with
-                                | Some caseInfo -> createFromViewModel (caseInfo.GetType()) newValue2
-                                | None -> Error "The DU case as specified in the view model does not exist"
-                            else Error "The type is not a DU as specified in the view model"
-                        | FieldValue _ -> createFromViewModel f.PropertyType newValue
-                        | Fields (newFields: Map<string,NodeViewModel>) ->
+                let args : Result<obj list, string> =
+                    (match newValue with
+                    | NotEnteredYet -> 
+                        // The DU may have no fields, in which case this is valid.
+                        match caseInfo.GetFields().Length with
+                        | 0 -> Ok []
+                        | _ -> Error "No DU information selected."
+                    | DU (case2, newValue2) -> 
+                        // Single DU field specified for making a single DU field.
+                        match caseInfo.GetFields().Length with
+                        | 1 -> 
+                            let propInfo = caseInfo.GetFields().[0]
+                            if FSharpType.IsUnion(propInfo.PropertyType) then
+                                createFromViewModel propInfo.PropertyType (DU(case2, newValue2))
+                                |> Result.lift (fun i -> [ i ])
+                                // match FSharpType.GetUnionCases(propInfo.PropertyType) |> Seq.tryFind(fun x -> x.Name = case2) with
+                                // | Some caseInfo -> 
+                                //     // This is the case of the nested object.
+                                //     createFromViewModel caseInfo newValue2
+                                // | None -> Error "The DU case as specified in the view model does not exist"
+                            else Error "A non-DU type was specified on a DU field, but only a DU view model was given"
+                        | _ -> Error "A DU view model was specified for a DU, but the parent DU does not have a single field."
+                    | FieldValue _ -> 
+                        // Single simple type field specified.
+                        match caseInfo.GetFields().Length with
+                        | 1 -> 
+                            createFromViewModel (caseInfo.GetFields().[0].PropertyType) newValue
+                            |> Result.lift (fun i -> [ i ])
+                        | _ -> Error "Only a single value was given for a multi- or -zero field DU case."
+                    | Fields (newFields: Map<string,NodeViewModel>) ->
+                        // Multiple fields specified for constructing DU case.
+                        caseInfo.GetFields() |> Array.map(fun f ->
                             match newFields |> Map.tryFind f.Name with
                             | Some newField -> createFromViewModel f.PropertyType newField
                             | None -> Error (sprintf "Value not found for DU field %s" f.Name)
-                    ) |> Array.toList |> Result.ofList
+                        ) |> Array.toList |> Result.ofList
+                    )
                 args |> Result.lift(fun args -> Reflection.FSharpValue.MakeUnion(caseInfo, args |> List.toArray))
             | None -> Error (sprintf "The DU case %s does not exist on this type." case1)
         | NotEnteredYet -> Error "No data has been entered yet"
@@ -78,6 +100,7 @@ module Create =
                 | Date t -> t :> obj |> Ok
                 | Time t -> t :> obj |> Ok
         | Fields newFields ->
+            // Fields - when specified not under a DU - represent an F# record ONLY.
             let recordFields = Reflection.FSharpType.GetRecordFields(objType)
             let values = recordFields |> Array.map(fun f ->
                 if newFields |> Map.containsKey f.Name 
@@ -89,8 +112,8 @@ module Create =
                         // TODO
                         Error "Not implemented"
                     | DU (case, vm2) -> 
-                        if FSharpType.IsUnion(objType) then
-                            match FSharpType.GetUnionCases(objType) |> Seq.tryFind(fun x -> x.Name = case) with
+                        if FSharpType.IsUnion(f.PropertyType) then
+                            match FSharpType.GetUnionCases(f.PropertyType) |> Seq.tryFind(fun x -> x.Name = case) with
                             | Some caseInfo -> createFromViewModel (caseInfo.GetType()) vm2
                             | None -> Error "The DU case as specified in the view model does not exist"
                         else Error "The type is not a DU as specified in the view model"
