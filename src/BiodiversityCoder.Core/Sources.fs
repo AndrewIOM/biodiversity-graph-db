@@ -15,7 +15,7 @@ module Sources =
         Number: int
         Pages: int * int
         Month: string
-        DataAvailability: DataAvailability option
+        DataAvailability: DataAvailability
     }
 
     and DataAvailability =
@@ -43,6 +43,7 @@ module Sources =
 
     type SourceNodeRelation =
         | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode
+        | ContainsPrimarySource of SourceNode * SourceNode
 
     and SourceRelation =
         | HasTemporalExtent
@@ -71,6 +72,6 @@ module BibtexParser =
                     Number = int m.Groups.[7].Value
                     Pages = int m.Groups.[8].Value, int m.Groups.[9].Value
                     Month = m.Groups.[10].Value
-                    DataAvailability = None
+                    DataAvailability = NotAttachedToSource
                 }) |> Seq.toList |> Ok
         else Error "No sources identified"

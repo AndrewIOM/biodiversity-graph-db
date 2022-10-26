@@ -4,37 +4,134 @@ namespace BiodiversityCoder.Core
 /// Nodes are stored as individual files.
 module Storage =
 
-    // Given a working folder, entities and relations are serialised into
-    // files where file names are keys and json are values.
-    let workingFolder = "~/Desktop/test-graph"
-    
+    open System.IO
+    open Microsoft.FSharpLu.Json
+
+    /// A file-based graph structure consisting of individual json
+    /// files and a json index contained within a local file system folder.
+    type FileBasedGraph<'node,'rel> = private FileBasedGraph of CachedGraph<'node, 'rel>
+    and CachedGraph<'node,'rel> = {
+        Graph: Graph.Graph<'node, 'rel>
+        NodesByType: Map<string, Map<string, string>>
+        Directory: string
+    }
+
+    let unwrap (FileBasedGraph f) = f
+
+    type FileBasedGraph<'a,'b> with
+        /// List nodes from the node index by key and pretty name.
+        member this.Nodes<'c> () =
+            (this |> unwrap).NodesByType |> Map.tryFind (typeof<'c>).Name
+
+    let indexFile = "atom-index.json"
+
+    let loadCacheFile<'a> directory filename : Result<'a,string> =
+        if Directory.Exists directory
+        then 
+            if File.Exists(Path.Combine(directory, filename))
+            then 
+                Path.Combine(directory, filename)
+                |> Compact.deserializeFile
+            else Error <| sprintf "File does not exist 1: %s" filename
+        else Error <| sprintf "Directory does not exist 3: %s" directory
+
+    let makeCacheFile<'a> directory filename (entity:'a) =
+        if Directory.Exists directory
+        then Compact.serializeToFile (Path.Combine(directory, filename)) entity |> Ok
+        else Error <| sprintf "Directory does not exist 2: %s" directory
+
+    type NodeIndexItem = {
+        NodeId: int
+        NodeTypeName: string
+        NodeKey: string
+        PrettyName: string
+    }
+
+    let loadIndex directory : Result<NodeIndexItem list,string> =
+        loadCacheFile directory indexFile
+
+    let loadAtom directory atomType atomKey : Result<Graph.Atom<'a,'b>,string> =
+        loadCacheFile directory (sprintf "atom-%s-%s.json" atomType atomKey)
+
+    let saveAtom directory atomType atomKey item =
+        makeCacheFile directory (sprintf "atom-%s-%s.json" atomType atomKey) item
+
+    let initIndex directory =
+        [] |> makeCacheFile directory indexFile
+        |> Result.lift(fun _ -> [])
+
+    let replaceIndex directory (nodes:list<NodeIndexItem>) =
+        nodes |> makeCacheFile directory indexFile
+        |> Result.lift(fun _ -> [])
+
     /// Read all nodes of the type given in the folder.
     let getAllNodes<'T> folder =
         // 1. Translate 'T into a node label.
         invalidOp "Not implemented"
 
-    /// A file-based graph structure consisting of individual json
-    /// files and a json index contained within a local file system folder.
-    type FileBasedGraph = {
-        Graph: Graph.Graph<GraphStructure.Node, GraphStructure.Relation>
-    } with
-        member this.NodesByType<'a> () = this.Graph.Head |> fst |> snd
-
-    open System.IO
-
-    let loadIndex fileName =
-        failwith "not finished"
-
-    let initIndex fileName =
-        failwith "not finished"
-
-    let loadOrInitGraph directory =
+    let loadOrInitGraph<'node, 'rel> directory =
         if not <| Directory.Exists directory
-        then Error "Directory does not exist"
+        then Error <| sprintf "Directory does not exist 1 (%s)" directory
         else
             let index =
-                if File.Exists (Path.Combine(directory, "node-index.json"))
-                then loadIndex (Path.Combine(directory, "node-index.json"))
-                else initIndex (Path.Combine(directory, "node-index.json"))
+                if File.Exists (Path.Combine(directory, indexFile))
+                then loadIndex directory
+                else initIndex directory
 
-            index
+            // Reorganise index into desired lookup.
+            let lookup =
+                index
+                |> Result.lift(fun r ->
+                    r 
+                    |> Seq.groupBy(fun i -> i.NodeTypeName)
+                    |> Seq.map(fun (g,l) -> 
+                        g, (l |> Seq.map(fun n -> n.NodeKey, n.PrettyName) |> Map.ofSeq))
+                    |> Map.ofSeq
+                )
+
+            let graph : Result<Graph.Graph<'node,'rel>,string> =
+                index 
+                |> Result.bind(fun i ->
+                    i |> List.map(fun ni ->
+                        loadAtom directory ni.NodeTypeName ni.NodeKey
+                    ) |> Result.ofList
+                )
+            
+            (fun g i -> FileBasedGraph { Graph = g; NodesByType = i; Directory = directory })
+            <!> graph
+            <*> lookup
+
+    let addNodes fileGraph nodes = 
+        let updatedGraph, maxId = Graph.addNodeData (nodes |> Seq.map(fun (_,n,_) -> n)) (unwrap fileGraph).Graph
+        
+        // Save nodes to cache (individual files).
+        // Assumes nodes are added sequentially and in order:
+        let newAtoms = 
+            [ 0 .. (nodes |> Seq.length) ] |> List.map ((+) maxId)
+            |> List.choose(fun i -> updatedGraph |> Graph.getAtom i)
+
+        if newAtoms.Length <> (nodes |> Seq.length)
+        then Error "Problem saving new graph nodes."
+        else
+            let saveNodes () =
+                newAtoms
+                |> List.zip nodes
+                |> List.map (fun ((nodeType,n,nodeKey),atom) -> 
+                    saveAtom (unwrap fileGraph).Directory nodeType nodeKey atom
+                    )
+                |> Result.ofList
+
+            // Save nodes to cached index:
+            let saveIndex () =
+                newAtoms
+                |> List.zip nodes
+                |> List.map (fun ((nodeType,n,nodeKey),atom) -> 
+                    { NodeId = (fst (fst atom))
+                      NodeTypeName = nodeType
+                      NodeKey = nodeKey
+                      PrettyName = "Unknown??" })
+                |> replaceIndex (unwrap fileGraph).Directory
+
+            saveNodes ()
+            |> Result.bind (fun _ -> saveIndex())
+            |> Result.lift (fun _ -> FileBasedGraph { unwrap fileGraph with Graph = updatedGraph })

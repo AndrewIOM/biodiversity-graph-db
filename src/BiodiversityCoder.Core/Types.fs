@@ -218,3 +218,8 @@ module Result =
         | Error e, Ok _ -> Error e
         | Ok _, Error es -> Error es
         | Error e, Error es -> Error es )
+
+    let lower fOk fErr r =
+        match r with
+        | Ok o -> fOk o
+        | Error e -> fErr e

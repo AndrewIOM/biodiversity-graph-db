@@ -187,13 +187,38 @@ module ViewGen =
             ]
         ]
 
-    let genField (field:System.Reflection.PropertyInfo) binding =
+    let textValue = function
+        | Some v ->
+            match v with
+            | Text t -> t
+            | _ -> ""
+        | None -> ""
+
+    let numberValue = function
+        | Some v ->
+            match v with
+            | Number t -> t
+            | _ -> 0
+        | None -> 0
+
+    let genStringInput existingValue maxLength dispatch =
+        input [ attr.maxlength maxLength; bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch); _class "form-control" ]
+
+    let genFloatInput existingValue dispatch =
+        input [ bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch); _class "form-control" ]
+
+    let genField (field:System.Reflection.PropertyInfo) existingValue dispatch =
         div [ _class "row mb-3" ] [
             label [ attr.``for`` field.Name; _class "col-sm-2 col-form-label" ] [ text field.Name ]
             div [ _class "col-sm-10" ] [
-                // TODO customise input depending on type
-                // TODO Add units of measure to box.
-                input [ binding; _class "form-control" ]
+                // TODO Make dynamic based on information held by the type, rather than having to specify all types manually.
+                (match field.PropertyType with
+                | t when t = typeof<FieldDataTypes.Text.ShortText> -> genStringInput existingValue 100 dispatch
+                | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput existingValue 9999 dispatch
+                | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput existingValue 2 dispatch
+                | t when t = typeof<float> -> genFloatInput existingValue dispatch
+                | t when t = typeof<int> -> genFloatInput existingValue dispatch
+                | _ -> genStringInput existingValue 9999 dispatch)
                 genHelp field
             ]
         ]
@@ -209,7 +234,7 @@ module ViewGen =
                 makeField' (Some field) v nestedVm field.PropertyType dispatch
             | FieldValue existingValue -> 
                 // Field is a simple type with a value already set. Render with value.
-                genField field (bind.input.string (string existingValue) (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(Text s))) |> dispatch))
+                genField field (Some existingValue) (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
             | Fields _
             | NotEnteredYet ->
                 // Field does not have an existing value. Render cleanly.
@@ -226,7 +251,7 @@ module ViewGen =
                             renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
                     | false ->
                         // Is not a DU or record. Render simple field.
-                        genField field (bind.input.string "" (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(Text s))) |> dispatch))
+                        genField field None (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
         | None ->
             // Field does not have an existing value. Render cleanly.
             cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
@@ -242,7 +267,7 @@ module ViewGen =
                         renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
                 | false ->
                     // Is not a DU or record. Render simple field.
-                    genField field (bind.input.string "" (fun s -> EnterNodeCreationData(formId,nestedVm(FieldValue(Text s))) |> dispatch))
+                    genField field None (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
 
     /// Generate form fields corresponding to a nested node view model.
     /// Each level may be a DU, which leads to generation of a select box with case options
@@ -294,7 +319,7 @@ module ViewGen =
     /// Also, generate a placeholder area for the data to bind to in the
     /// view model, which can then be submitted.
     let makeNodeForm<'a> (nodeViewModel: NodeViewModel option) dispatch =
-        form [ _class "simple-box" ] [
+        div [ _class "simple-box" ] [
             cond nodeViewModel <| function
             | Some vm -> makeField (typeof<'a>).Name None vm id typeof<'a> dispatch
             | None -> makeField (typeof<'a>).Name None NotEnteredYet id typeof<'a> dispatch
@@ -302,10 +327,12 @@ module ViewGen =
         ]
 
     /// Generate a list of select options based on available nodes in the graph.
-    let optionGen nodeType (nodes:Map<string, Map<string, string>>) =
-        cond (nodes |> Map.tryFind nodeType) <| function
-            | None -> empty
-            | Some nodes ->
-                forEach nodes <| fun node ->
-                    option [ attr.value node.Key ] [ text node.Value ]
-
+    let optionGen<'node> (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option) =
+        cond graph <| function
+        | Some g ->
+            cond (g.Nodes<'node>()) <| function
+                | None -> empty
+                | Some nodes ->
+                    forEach nodes <| fun node ->
+                        option [ attr.value node.Key ] [ text node.Value ]
+        | None -> empty

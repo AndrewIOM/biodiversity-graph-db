@@ -44,19 +44,17 @@ module App =
     type Model =
         {
             Page: Page
-            Graph: Graph.Graph<GraphStructure.Node,GraphStructure.Relation>
+            Graph: Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option
             Import: string
             Error: string option
-            NodesByType: Map<string, Map<string, string>>
             NodeCreationViewModels: Map<string, NodeViewModel>
             NodeCreationValidationErrors: Map<string, (string * string) list>
         }
 
     let initModel =
-        // TODO Replace seed with loading mechanism. Only seed if initing a new database.
-        match Seed.initGraph() with
-        | Ok g ->  { Graph = g; Import = ""; Error = None; Page = Source; NodesByType = Map.empty; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
-        | Error e -> { Graph = []; Import = ""; Error = Some e; Page = Source; NodesByType = Map.empty; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        match Storage.loadOrInitGraph "/Users/andrewmartin/Desktop/test-graph/" with
+        | Ok g ->  { Graph = Some g; Import = ""; Error = None; Page = Source; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        | Error e -> { Graph = None; Import = ""; Error = Some e; Page = Source; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
 
     type Message =
         | SetPage of Page
@@ -67,10 +65,6 @@ module App =
         | ImportBibtex
         | FormMessage of FormMessage
 
-    // let cre = field.PropertyType.GetMember("Create")
-    // if cre.Length <> 1 then empty
-    // else
-
     let update (openFolder:unit -> Task<string>) message model =
         match message with
         | SetPage page -> { model with Page = page }, Cmd.none
@@ -80,7 +74,13 @@ module App =
             match BibtexParser.parse model.Import with
             | Error e -> { model with Error = Some e }, Cmd.none
             | Ok nodes ->
-                { model with Graph = model.Graph |> Graph.addNodeData (nodes |> List.map GraphStructure.Node.SourceNode) |> fst }, Cmd.none
+                let nodes = nodes |> List.map (fun n -> "SourceNode", GraphStructure.Node.SourceNode n, "SourceKey")
+                match model.Graph with
+                | Some g -> 
+                    match Storage.addNodes g nodes with
+                    | Ok g -> { model with Graph = Some g }, Cmd.none
+                    | Error e -> { model with Error = Some e }, Cmd.none
+                | None -> model, Cmd.none
         | SelectFolder ->
             model, Cmd.OfAsync.result(async {
                 let! folder = openFolder () |> Async.AwaitTask
@@ -88,7 +88,7 @@ module App =
             })
         | SelectedFolder folder ->
             match Storage.loadOrInitGraph folder with
-            | Ok g -> { model with Graph = g }, Cmd.none
+            | Ok g -> { model with Graph = Some g }, Cmd.none
             | Error e -> { model with Error = Some e }, Cmd.none
         | FormMessage m ->
             match m with
@@ -100,20 +100,23 @@ module App =
                     match model.NodeCreationViewModels |> Map.tryFind formId with
                     | Some formData -> Merge.updateNodeViewModel formData vm
                     | None -> Merge.updateNodeViewModel NotEnteredYet vm
-                { model with NodeCreationViewModels = model.NodeCreationViewModels |> Map.add formId updatedVm; Error = Some <| sprintf "%A" vm }, Cmd.none
+                { model with NodeCreationViewModels = model.NodeCreationViewModels |> Map.add formId updatedVm }, Cmd.none
 
             | AddOrUpdateNode nodeType -> 
-                // 3. Submit change to filesystem-based graph.
-                // 4. Handle any errors or return OK.
                 match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
                 | Some (formData: NodeViewModel) -> 
-                    // 2. Validate by converting into internal graph types (e.g. Text.ShortText)
-
-                    // Create.createFromViewModel System.Type.GetType()
-
-                    // Merge.updateNodeViewModel formData vm
-                    model, Cmd.none
-                | None -> model, Cmd.none
+                    let node = Create.createFromViewModel nodeType formData
+                    match node with
+                    | Error e -> { model with Error = Some e }, Cmd.none
+                    | Ok n -> 
+                        match model.Graph with
+                        | Some g ->
+                            GraphStructure.Nodes.tryMakeNode nodeType n
+                            |> Result.bind (fun n -> Storage.addNodes g [nodeType.Name, n, "SomeKey"])
+                            |> Result.lift (fun g -> { model with Graph = Some g })
+                            |> Result.lower (fun r -> r, Cmd.none) (fun e -> { model with Error = Some e }, Cmd.none)
+                        | None -> { model with Error = Some "Cannot make node as graph is not loaded." }, Cmd.none
+                | None -> { model with Error = Some (sprintf "Could not find type of %s" nodeType.Name) }, Cmd.none
 
     let _class = attr.``class``
 
@@ -182,23 +185,19 @@ module App =
                             div [ _class "card" ] [
                                 div [ _class "card-header" ] [ text "Selected source" ]
                                 div [ _class "card-body" ] [
-                                    select [] (
-                                        model.Graph 
-                                        |> List.where(fun (n,_) -> 
-                                                match snd n with 
-                                                | GraphStructure.Node.SourceNode _ -> true 
-                                                | _ -> false )
-                                        |> List.map(fun n ->
-                                            option [] [
-                                            match snd (fst n) with
-                                            | GraphStructure.Node.SourceNode s ->
-                                                match s with
-                                                | Sources.SourceNode.Bibliographic d -> d.Title.Value.Value
-                                                | Sources.SourceNode.GreyLiterature d -> d.Title.Value
-                                                | Sources.SourceNode.DarkData d -> d.Details.Value
-                                            | _ -> "Error"
-                                        |> text ])
-                                    )
+                                    select [] [(
+                                        cond model.Graph <| function
+                                        | Some g ->
+                                            cond (g.Nodes<Sources.SourceNode>()) <| function
+                                            | Some sources ->
+                                                sources
+                                                |> Seq.map(fun k ->
+                                                    option [ attr.name k.Key ] [ text k.Value ])
+                                                |> Seq.toList
+                                                |> concat
+                                            | None -> empty
+                                        | None -> empty
+                                    )]
                                 ]
                             ]
 
@@ -252,10 +251,10 @@ module App =
                                                 // Add a new one. form in here.
                                                 // Existing proxied taxa:
                                                 tr [] [                                                                    
-                                                    td [] [ select [] [ ViewGen.optionGen "BioticProxyNode" model.NodesByType ] ]
-                                                    td [] [ select [] [ ViewGen.optionGen "InferenceMethodNode" model.NodesByType ] ]
-                                                    td [] [ select [] [ ViewGen.optionGen "TaxonNode" model.NodesByType ] ]
-                                                    td [] [ select [] [ ViewGen.optionGen "BiodiversityDimensionNode" model.NodesByType ] ]
+                                                    td [] [ select [] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                    td [] [ select [] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                    td [] [ select [] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                    td [] [ select [] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ]
                                                 ]
                                                 forEach [ 1 .. 7 ] <| fun proxiedTaxa ->
                                                     tr [] [

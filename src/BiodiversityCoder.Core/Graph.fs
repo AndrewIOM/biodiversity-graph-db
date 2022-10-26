@@ -194,6 +194,24 @@ module GraphStructure =
         let tryFindTimePeriod label graph = tryFind asExposureNode whereTime' label graph
         let tryFindYear year graph = tryFind asExposureNode whereYear' year graph
 
+        let tryMakeNode t (n:obj) =
+            try
+                match t with
+                // Source nodes:
+                | (t: System.Type) when t = typeof<Sources.SourceNode> -> n :?> Sources.SourceNode |> SourceNode |> Ok
+                // Population nodes:
+                | (t: System.Type) when t = typeof<BioticProxies.BioticProxyNode> -> n :?> BioticProxies.BioticProxyNode |> BioticProxyNode |> PopulationNode |> Ok
+                | (t: System.Type) when t = typeof<Taxonomy.TaxonNode> -> n :?> Taxonomy.TaxonNode |> TaxonomyNode |> PopulationNode |> Ok
+                | (t: System.Type) when t = typeof<BioticProxies.InferenceMethodNode> -> n :?> BioticProxies.InferenceMethodNode |> InferenceMethodNode |> PopulationNode |> Ok
+                // | (t: System.Type) when t = typeof<Population.Taxonomy.VernacularTaxonLabelNode> -> n :?> Population.Taxonomy.VernacularTaxonLabelNode |> TaxonomyNode |> PopulationNode
+                // | t when t = typeof<Population.Context.ContextNode> -> n :?> Population.Context.ContextNode |> 
+                // Exposure node:
+                | (t: System.Type) when t = typeof<TemporalIndex.CalYearNode> -> n :?> TemporalIndex.CalYearNode |> YearNode |> ExposureNode |> Ok
+                | (t: System.Type) when t = typeof<TemporalIndex.QualitativeLabelNode> -> n :?> TemporalIndex.QualitativeLabelNode |> SliceLabelNode |> ExposureNode |> Ok
+                // Outcome node:
+                | (t: System.Type) when t = typeof<TemporalIndex.QualitativeLabelNode> -> n :?> TemporalIndex.QualitativeLabelNode |> Exposure.SliceLabelNode |> ExposureNode |> Ok
+                | _ -> Error <| sprintf "Not a known node type (%s)" t.Name
+            with | e -> Error <| sprintf "Failed to make a node: %s" e.Message
 
     module Relations =
 
