@@ -5,11 +5,11 @@ namespace BiodiversityCoder.Core
 [<RequireQualifiedAccess>]
 module Graph =
     
-    type Node<'TData> = int * 'TData
+    type Node<'TData> = System.Guid * 'TData
     
     type Connection<'TData> =
-        int * // source Id
-        int * // sink id
+        System.Guid * // source Id
+        System.Guid * // sink id
         int * // weight
         'TData // connection data
     
@@ -48,18 +48,10 @@ module Graph =
         | _ -> failwith "A node already exists with that ID"
 
     let addNodeData (items:'nodeData seq) (graph:Graph<'nodeData,_>) =
-
-        // 1. Find the current maximum (sequential) node ID
-        let max =
-            { contents = if (graph.Length = 0) then -1
-                         else graph |> List.maxBy(fun atom -> getAtomId atom) |> getAtomId }
-
-        // 2. Insert a new node with the specified ID
-        Seq.fold(fun acc data ->
-                    max.Value <- max.Value + 1
-                    let newNode = max.Value, data
-                    addNode newNode acc
-                     ) graph items, max.Value
+        Seq.fold(fun (acc,acc2) data ->
+                    let newNode = System.Guid.NewGuid(), data
+                    addNode newNode acc, newNode :: acc2
+                     ) (graph, []) items
 
     let pointsTo id atom =
         atom 
@@ -88,7 +80,7 @@ module Graph =
             ) [] graph
 
     /// Connect two nodes together given a relationship.
-    let addRelation sourceId sinkId weight connData (graph:Graph<_,_>) : Result<Graph<'nodeData,'connData>,string> =
+    let addRelation (sourceId:System.Guid) sinkId weight connData (graph:Graph<_,_>) : Result<Graph<'nodeData,'connData>,string> =
         let source = graph |> List.tryFind(fun n -> fst (fst n) = sourceId)
         let sink = graph |> List.tryFind(fun n -> fst (fst n) = sourceId)
         if source.IsNone || sink.IsNone
@@ -154,6 +146,66 @@ module GraphStructure =
         | Population of PopulationRelation
         | Exposure of ExposureRelation
 
+    type Node with
+
+        /// Provides a (non-unique) 'pretty' name for use in user interfaces to display
+        /// the node, e.g. in a dropdown list or table.
+        member this.DisplayName () =
+            match this with
+            | PopulationNode p ->
+                match p with
+                | BioticProxyNode n -> n.ToString() // TODO
+                | TaxonomyNode n -> n.ToString() // TODO
+                | InferenceMethodNode n -> n.ToString() // TODO
+                | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
+            | SourceNode s ->
+                match s with
+                | Bibliographic n -> 
+                    sprintf "%s (%i). %s" 
+                        (if n.Author.IsSome then n.Author.Value.Value else "?") n.Year
+                        (if n.Title.IsSome then n.Title.Value.Value else "?")
+                | GreyLiterature n -> sprintf "Grey literature source: %s" n.Title.Value
+                | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
+            | ExposureNode e ->
+                match e with
+                | YearNode y -> sprintf "%i cal yr BP" y.Year
+                | SliceLabelNode n -> n.Name
+            | OutcomeNode o ->
+                match o with
+                | MeasureNode n -> n.ToString()
+
+        member this.Key () = 
+            match this with
+            | PopulationNode p ->
+                match p with
+                | BioticProxyNode n -> n.ToString() // TODO
+                | TaxonomyNode n -> n.ToString() // TODO
+                | InferenceMethodNode n -> n.ToString() // TODO
+                | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
+            | SourceNode s ->
+                match s with
+                | Bibliographic n -> 
+                    String.concat "_" [
+                        "pub"
+                        (if n.Author.IsSome then n.Author.Value.Value else "unknown")
+                        (if n.Title.IsSome then 
+                            (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
+                            else "notitle")
+                        string n.Year ]
+                | GreyLiterature n -> 
+                    sprintf "grey_%s_%s_%s"
+                        n.Contact.LastName.Value
+                        (n.Contact.FirstName.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
+                        (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
+                | DarkData n -> sprintf "darkdata_%s" n.Contact.LastName.Value
+            | ExposureNode e ->
+                match e with
+                | YearNode y -> sprintf "%iybp" y.Year
+                | SliceLabelNode n -> n.Name
+            | OutcomeNode o ->
+                match o with
+                | MeasureNode n -> n.ToString()
+
     /// Functions to tryFind specific node types based on their
     /// inherent indexes or other conditions.
     module Nodes =
@@ -215,7 +267,7 @@ module GraphStructure =
 
     module Relations =
 
-        type ValidRelation<'TData> = private ValidRelation of int * int * 'TData
+        type ValidRelation<'TData> = private ValidRelation of System.Guid * System.Guid * 'TData
         let private unwrap (ValidRelation (a,b,c)) = a,b,c
 
         /// Helpers to read F# cases
@@ -231,7 +283,7 @@ module GraphStructure =
             /// the source and sink type constraints for a given relation.
             /// Returns true if the case parameter at the specified index is
             /// of the same type as 'node.
-            let compareTypes (node:int * 'node) rel paramIndex = 
+            let compareTypes (node:System.Guid * 'node) rel paramIndex = 
                 printfn "type is %A" (rel.GetType().FullName)
                 let lookupType = 
                     rel.GetType().FullName.Replace("Relation", "NodeRelation")
@@ -311,7 +363,7 @@ module GraphStructure =
             let! existingTaxon = graph |> Nodes.tryFindTaxon (fun n -> n = edge.InferredAs), "taxon doesn't exist"
             let! existingInfer = graph |> Nodes.tryFindInferenceMethod (fun n -> n = edge.InferredUsing), "infer doesn't exist"
             let proxiedGraph = Graph.addNodeData [PopulationNode ProxiedTaxonNode] graph
-            let! proxiedTaxon = Graph.getAtom (snd proxiedGraph) (fst proxiedGraph), "no intermediate node"
+            let! proxiedTaxon = Graph.getAtom (snd proxiedGraph |> List.last |> fst) (fst proxiedGraph), "no intermediate node"
             // Add relations that make the intermediate node encode the hyper-edge:
             return!
                 proxiedGraph |> fst

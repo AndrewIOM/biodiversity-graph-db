@@ -41,7 +41,7 @@ module Storage =
         else Error <| sprintf "Directory does not exist 2: %s" directory
 
     type NodeIndexItem = {
-        NodeId: int
+        NodeId: System.Guid
         NodeTypeName: string
         NodeKey: string
         PrettyName: string
@@ -50,11 +50,11 @@ module Storage =
     let loadIndex directory : Result<NodeIndexItem list,string> =
         loadCacheFile directory indexFile
 
-    let loadAtom directory atomType atomKey : Result<Graph.Atom<'a,'b>,string> =
-        loadCacheFile directory (sprintf "atom-%s-%s.json" atomType atomKey)
+    let loadAtom directory (atomType:string) (atomKey:string) : Result<Graph.Atom<'a,'b>,string> =
+        loadCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower()))
 
-    let saveAtom directory atomType atomKey item =
-        makeCacheFile directory (sprintf "atom-%s-%s.json" atomType atomKey) item
+    let saveAtom directory (atomType:string) (atomKey:string) item =
+        makeCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower())) item
 
     let initIndex directory =
         [] |> makeCacheFile directory indexFile
@@ -101,13 +101,14 @@ module Storage =
             <!> graph
             <*> lookup
 
-    let addNodes fileGraph nodes = 
-        let updatedGraph, maxId = Graph.addNodeData (nodes |> Seq.map(fun (_,n,_) -> n)) (unwrap fileGraph).Graph
+    let addNodes (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (nodes:GraphStructure.Node list) = 
+        let updatedGraph, addedNodes = 
+            Graph.addNodeData nodes (unwrap fileGraph).Graph
         
         // Save nodes to cache (individual files).
-        // Assumes nodes are added sequentially and in order:
         let newAtoms = 
-            [ 0 .. (nodes |> Seq.length) ] |> List.map ((+) maxId)
+            addedNodes
+            |> List.map fst
             |> List.choose(fun i -> updatedGraph |> Graph.getAtom i)
 
         if newAtoms.Length <> (nodes |> Seq.length)
@@ -116,8 +117,8 @@ module Storage =
             let saveNodes () =
                 newAtoms
                 |> List.zip nodes
-                |> List.map (fun ((nodeType,n,nodeKey),atom) -> 
-                    saveAtom (unwrap fileGraph).Directory nodeType nodeKey atom
+                |> List.map (fun (n, atom) -> 
+                    saveAtom (unwrap fileGraph).Directory (n.GetType().Name) (n.Key()) atom
                     )
                 |> Result.ofList
 
@@ -125,11 +126,11 @@ module Storage =
             let saveIndex () =
                 newAtoms
                 |> List.zip nodes
-                |> List.map (fun ((nodeType,n,nodeKey),atom) -> 
+                |> List.map (fun ((n: ^T),atom) -> 
                     { NodeId = (fst (fst atom))
-                      NodeTypeName = nodeType
-                      NodeKey = nodeKey
-                      PrettyName = "Unknown??" })
+                      NodeTypeName = (n.GetType().Name)
+                      NodeKey = n.Key()
+                      PrettyName = n.DisplayName() })
                 |> replaceIndex (unwrap fileGraph).Directory
 
             saveNodes ()

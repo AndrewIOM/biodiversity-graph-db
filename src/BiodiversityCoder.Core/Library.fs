@@ -74,7 +74,7 @@ module App =
             match BibtexParser.parse model.Import with
             | Error e -> { model with Error = Some e }, Cmd.none
             | Ok nodes ->
-                let nodes = nodes |> List.map (fun n -> "SourceNode", GraphStructure.Node.SourceNode n, "SourceKey")
+                let nodes = nodes |> List.map GraphStructure.Node.SourceNode
                 match model.Graph with
                 | Some g -> 
                     match Storage.addNodes g nodes with
@@ -112,7 +112,7 @@ module App =
                         match model.Graph with
                         | Some g ->
                             GraphStructure.Nodes.tryMakeNode nodeType n
-                            |> Result.bind (fun n -> Storage.addNodes g [nodeType.Name, n, "SomeKey"])
+                            |> Result.bind (fun n -> Storage.addNodes g [ n ])
                             |> Result.lift (fun g -> { model with Graph = Some g })
                             |> Result.lower (fun r -> r, Cmd.none) (fun e -> { model with Error = Some e }, Cmd.none)
                         | None -> { model with Error = Some "Cannot make node as graph is not loaded." }, Cmd.none
