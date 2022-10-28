@@ -165,8 +165,9 @@ module GraphStructure =
                 | Excluded (s,_,_) ->
                     match s with
                     | Bibliographic n -> 
-                        sprintf "%s (%i). %s" 
-                            (if n.Author.IsSome then n.Author.Value.Value else "?") n.Year
+                        sprintf "%s (%s). %s" 
+                            (if n.Author.IsSome then n.Author.Value.Value else "?")
+                            (if n.Year.IsSome then n.Year.Value.ToString() else "?")
                             (if n.Title.IsSome then n.Title.Value.Value else "?")
                     | GreyLiterature n -> sprintf "Grey literature source: %s" n.Title.Value
                     | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
@@ -195,11 +196,11 @@ module GraphStructure =
                     | Bibliographic n -> 
                         String.concat "_" [
                             "pub"
-                            (if n.Author.IsSome then n.Author.Value.Value else "unknown")
+                            (if n.Author.IsSome then n.Author.Value.Value.Split(",").[0] else "unknown")
                             (if n.Title.IsSome then 
                                 (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
                                 else "notitle")
-                            string n.Year ]
+                            string n.Year.Value ]
                     | GreyLiterature n -> 
                         sprintf "grey_%s_%s_%s"
                             n.Contact.LastName.Value

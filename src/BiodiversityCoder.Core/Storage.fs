@@ -22,6 +22,7 @@ module Storage =
         /// List nodes from the node index by key and pretty name.
         member this.Nodes<'c> () =
             (this |> unwrap).NodesByType |> Map.tryFind (typeof<'c>).Name
+        member this.Directory = (unwrap this).Directory
 
     let indexFile = "atom-index.json"
 

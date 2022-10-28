@@ -329,11 +329,11 @@ module ViewGen =
     /// Also, generate a placeholder area for the data to bind to in the
     /// view model, which can then be submitted.
     let makeNodeForm<'a> (nodeViewModel: NodeViewModel option) dispatch =
-        makeNodeForm' nodeViewModel "Create" dispatch (fun _ -> true)
+        makeNodeForm'<'a> nodeViewModel "Create" dispatch (fun _ -> true)
 
     /// Makes a form to create a new node where relations are also required.
     let makeNodeFormWithRelations<'a> validateRelations (nodeViewModel: NodeViewModel option) dispatch =
-        makeNodeForm' nodeViewModel "Create" dispatch validateRelations
+        makeNodeForm'<'a> nodeViewModel "Create" dispatch validateRelations
 
     /// Generate a list of select options based on available nodes in the graph.
     let optionGen<'node> (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option) =

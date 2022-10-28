@@ -85,16 +85,6 @@ module App =
         match message with
         | SetPage page -> { model with Page = page }, Cmd.none
         | ChangeImportText s -> { model with Import = s }, Cmd.none
-        | SelectSource k ->
-            match model.Graph with
-            | None -> { model with Error = Some <| "Can't select a source when no graph is loaded." }, Cmd.none
-            | Some g ->
-                match g |> Storage.atomByKey k with
-                | Some atom -> 
-                    { model with SelectedSource = Some { SelectedSource = atom; LinkToSecondarySource = None; Screening = NotEnteredYet } }, Cmd.none
-                | None -> { model with Error = Some <| sprintf "Could not find source with key %s" k }, Cmd.none
-        | ImportColandr ->
-            model, Cmd.none
         | ImportBibtex -> 
             match BibtexParser.parse model.Import with
             | Error e -> { model with Error = Some e }, Cmd.none
@@ -106,6 +96,28 @@ module App =
                     | Ok g -> { model with Graph = Some g }, Cmd.none
                     | Error e -> { model with Error = Some e }, Cmd.none
                 | None -> model, Cmd.none
+        | ImportColandr ->
+            match model.Graph with
+            | Some g ->
+                try
+                    match ColandrParser.syncColandr (System.IO.Path.Combine(g.Directory,"colandr-titleabs-screen-results.csv")) with
+                    | Error e -> { model with Error = Some e }, Cmd.none
+                    | Ok nodes ->
+                        let nodes = nodes |> Seq.map (Sources.SourceNode.Unscreened >> GraphStructure.Node.SourceNode) |> Seq.toList
+                        // TODO Don't overwrite existing nodes.
+                        match Storage.addNodes g nodes with
+                        | Ok g -> { model with Graph = Some g; Error = Some <| sprintf "%A" nodes }, Cmd.none
+                        | Error e -> { model with Error = Some e }, Cmd.none
+                with e -> { model with Error = Some e.Message }, Cmd.none
+            | None -> { model with Error = Some "There was no graph" }, Cmd.none
+        | SelectSource k ->
+            match model.Graph with
+            | None -> { model with Error = Some <| "Can't select a source when no graph is loaded." }, Cmd.none
+            | Some g ->
+                match g |> Storage.atomByKey k with
+                | Some atom -> 
+                    { model with SelectedSource = Some { SelectedSource = atom; LinkToSecondarySource = None; Screening = NotEnteredYet } }, Cmd.none
+                | None -> { model with Error = Some <| sprintf "Could not find source with key %s" k }, Cmd.none
         | SelectFolder ->
             model, Cmd.OfAsync.result(async {
                 let! folder = openFolder () |> Async.AwaitTask
@@ -169,6 +181,9 @@ module App =
                                 |> Result.lower (fun r -> r, Cmd.none) (fun e -> { model with Error = Some e }, Cmd.none)
                         | None -> { model with Error = Some "Cannot make node as graph is not loaded." }, Cmd.none
                 | None -> { model with Error = Some (sprintf "Could not find type of %s" nodeType.Name) }, Cmd.none
+            | EnterNodeRelationData(_, _, sinkKeys) -> failwith "Not Implemented"
+            | ChangeNodeRelationToggle(_, _) -> failwith "Not Implemented"
+        | ScreenSource(_) -> failwith "Not Implemented"
 
     let _class = attr.``class``
 
@@ -222,12 +237,18 @@ module App =
                         | Page.Sources -> concat [
                                 h2 [] [ text "Sources Manager" ]
                                 hr []
+
+                                text "You can import sources from Colandr using the button below. The colandr raw output should be saved as 'colandr-titleabs-screen-results.csv' in the graph database folder."
+                                button [ _class "btn btn-primary"; on.click (fun _ -> ImportColandr |> dispatch) ] [ text "Import from Colandr (title-abstract screening)" ]
+
                                 div [ _class "card" ] [
                                     div [ _class "card-header" ] [ text "Import new sources" ]
                                     text "Enter a bibtex-format file below."
                                     textarea [ bind.input.string model.Import (fun s -> ChangeImportText s |> dispatch) ] []
                                     button [ on.click (fun _ -> ImportBibtex |> dispatch ) ] [ text "Import" ]
                                 ]
+
+                                text <| sprintf "%A" model
                             ]
 
                         | Page.Extract -> div [] [
