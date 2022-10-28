@@ -7,6 +7,7 @@ module Seed =
     open Exposure.TemporalIndex
     open Population
     open FieldDataTypes
+    open Sources
 
     /// Tests adding in a hyper-edge for the taxon identification.
     /// Consists of four nodes: the three core nodes, plus the
@@ -39,7 +40,7 @@ module Seed =
         let bibText = System.IO.File.ReadAllText(path)
         BibtexParser.parse bibText
         |> Result.lift(fun sources ->
-            Graph.addNodeData (sources |> List.map(fun source -> SourceNode source)) graph)
+            Graph.addNodeData (sources |> List.map(fun source -> SourceNode (Unscreened source))) graph)
 
     /// Initalise a graph with the core nodes required for the research question.
     let initGraph () =

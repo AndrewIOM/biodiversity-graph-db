@@ -36,10 +36,27 @@ module Sources =
     }
 
     /// A graph database node representing a source of information.
-    type SourceNode =
+    type Source =
         | Bibliographic of ArticleMetadataNode
         | GreyLiterature of GreySourceNode
         | DarkData of DarkDataNode
+
+    type SourceNode =
+        | Included of Source
+        | Unscreened of Source
+        | Excluded of Source * because:ExclusionReason * notes:Text.Text
+
+    and ExclusionReason =
+        | BiotaNotPresent
+        | NotArcticRegion
+        | NoYearsInHolocene
+        | NotTimeSeries
+        | NoBiodiversityMeasure
+        | IsNotProxyMethod
+        | IsExperimentalDesign
+        | IsOceanic
+        | IsSpaceForTime
+        | OtherExclusionReason
 
     type SourceNodeRelation =
         | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode
@@ -75,3 +92,11 @@ module BibtexParser =
                     DataAvailability = NotAttachedToSource
                 }) |> Seq.toList |> Ok
         else Error "No sources identified"
+
+module ColandrParser =
+
+    open FSharp.Data
+
+    
+
+    

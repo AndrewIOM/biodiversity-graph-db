@@ -9,7 +9,9 @@ type NodeViewModel =
 type FormMessage =
     | EnterNodeCreationData of string * NodeViewModel
     | RelateNodes of string * string * GraphStructure.ProposedRelation
-    | AddOrUpdateNode of System.Type
+    | AddOrUpdateNode of System.Type * validateRelations:(seq<GraphStructure.ProposedRelation> -> bool)
+    | EnterNodeRelationData of string * GraphStructure.ProposedRelation * sinkKeys:string list
+    | ChangeNodeRelationToggle of string * string
     | AddProxiedTaxon of Population.ProxiedTaxon.ProxiedTaxonHyperEdge
 
 module Create =
@@ -314,17 +316,24 @@ module ViewGen =
                         renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId) formId
             | false -> empty // Unsupported type (not a record or DU).
 
+    let makeNodeForm'<'a> (nodeViewModel: NodeViewModel option) buttonName dispatch validateRelations =
+        div [ _class "simple-box" ] [
+            cond nodeViewModel <| function
+            | Some vm -> makeField (typeof<'a>).Name None vm id typeof<'a> dispatch
+            | None -> makeField (typeof<'a>).Name None NotEnteredYet id typeof<'a> dispatch
+            button [ _class "btn btn-primary"; on.click (fun _ -> AddOrUpdateNode((typeof<'a>), validateRelations) |> dispatch) ] [ text buttonName ]
+        ]
+
     /// Given a node type (maybe a DU or record or normal type),
     /// generate a set of fields to use for inputting the data.
     /// Also, generate a placeholder area for the data to bind to in the
     /// view model, which can then be submitted.
     let makeNodeForm<'a> (nodeViewModel: NodeViewModel option) dispatch =
-        div [ _class "simple-box" ] [
-            cond nodeViewModel <| function
-            | Some vm -> makeField (typeof<'a>).Name None vm id typeof<'a> dispatch
-            | None -> makeField (typeof<'a>).Name None NotEnteredYet id typeof<'a> dispatch
-            button [ _class "btn btn-primary"; on.click (fun _ -> (typeof<'a>) |> AddOrUpdateNode |> dispatch) ] [ text "Create" ]
-        ]
+        makeNodeForm' nodeViewModel "Create" dispatch (fun _ -> true)
+
+    /// Makes a form to create a new node where relations are also required.
+    let makeNodeFormWithRelations<'a> validateRelations (nodeViewModel: NodeViewModel option) dispatch =
+        makeNodeForm' nodeViewModel "Create" dispatch validateRelations
 
     /// Generate a list of select options based on available nodes in the graph.
     let optionGen<'node> (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option) =
@@ -336,3 +345,66 @@ module ViewGen =
                     forEach nodes <| fun node ->
                         option [ attr.value node.Key ] [ text node.Value ]
         | None -> empty
+
+
+    module RelationsForms =
+
+        open Exposure
+        open Microsoft.FSharp.Reflection
+
+        ///Returns the case name of the object with union type 'ty.
+        let unionCaseName (x:'a) = 
+            match FSharpValue.GetUnionFields(x, typeof<'a>) with
+            | case, _ -> case.Name  
+
+        /// Render a node relation field item.
+        let selectExistingNode<'sinkNodeType> name (rel:GraphStructure.ProposedRelation) (relationValues:Map<GraphStructure.ProposedRelation, string list>) graph dispatch =
+            concat [
+                label [] [ text name ]
+                cond (relationValues |> Map.tryFind rel) <| function
+                | Some v -> 
+                    cond v.IsEmpty <| function
+                    | true -> select [ bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, [v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                    | false -> select [ bind.change.string v.Head (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, [v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                | None -> select [ bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, [v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+            ]
+        
+        /// Render a node relation field item.
+        /// Allows entry of multiple sink nodes for this type of relation.
+        let selectExistingNodeMulti<'sinkNodeType> name (rel:GraphStructure.ProposedRelation) (relationValues:Map<GraphStructure.ProposedRelation, string list>) graph dispatch =
+            concat [
+                label [] [ text name ]
+                cond (relationValues |> Map.tryFind rel) <| function
+                | Some all -> concat [
+                    forEach all <| fun v ->
+                        select [ bind.change.string v (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, (v :: (all |> List.except [v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                    select [ bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, (v :: (all |> List.except [v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ] ]
+                | None -> select [ bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, [v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+            ]
+        
+        /// Render a toggle for different combinations of possible relations.
+        let relationsToggle<'a> (elements: (string * (Map<GraphStructure.ProposedRelation,string list> -> Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> (FormMessage -> unit) -> Bolero.Node) list) list) (currentRelations: Map<string,string * Map<GraphStructure.ProposedRelation,list<string>>>) graph dispatch =
+            cond (currentRelations |> Map.tryFind (typeof<'a>.Name)) <| function
+            | Some (toggleSet, relationValues) ->
+                div [ _class "card" ] [
+                    ul [ _class "nav nav-tabs" ] (elements |> List.map(fun (toggle,_) ->
+                        li [ _class "nav-item" ] [ 
+                            a [ attr.href "#"; _class (if toggle = toggleSet then "nav-link active" else "nav-link")
+                                on.click(fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                        ]))
+                    cond (elements |> Seq.tryFind(fun (e,_) -> e = toggleSet)) <| function
+                    | Some (_,n) -> n |> List.map(fun n -> n relationValues graph dispatch) |> concat
+                    | None -> empty
+                ]
+            | None -> 
+                div [ _class "card" ] [
+                    ul [ _class "nav nav-tabs" ] (elements |> List.mapi(fun i (toggle,_) ->
+                        li [ _class "nav-item" ] [ 
+                            a [ attr.href "#"; _class (if i = 0 then "nav-link active" else "nav-link") ] [ text toggle ]
+                        ]))
+                    (elements.Head |> snd) |> List.map(fun n -> n Map.empty graph dispatch) |> concat
+                ]
+
+        module Validation =
+
+            let hasOne i relations = relations |> Seq.where(fun r -> r = i) |> Seq.length = 1

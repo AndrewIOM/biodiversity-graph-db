@@ -56,6 +56,8 @@ module Exposure =
     type ExposureNode =
         | YearNode of TemporalIndex.CalYearNode
         | SliceLabelNode of TemporalIndex.QualitativeLabelNode
+        | TimelineNode of StudyTimeline.IndividualTimelineNode
+        | DateNode of StudyTimeline.IndividualDateNode
 
     open TemporalIndex
     open StudyTimeline

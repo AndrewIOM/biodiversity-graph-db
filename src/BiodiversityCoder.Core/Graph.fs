@@ -160,12 +160,16 @@ module GraphStructure =
                 | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
             | SourceNode s ->
                 match s with
-                | Bibliographic n -> 
-                    sprintf "%s (%i). %s" 
-                        (if n.Author.IsSome then n.Author.Value.Value else "?") n.Year
-                        (if n.Title.IsSome then n.Title.Value.Value else "?")
-                | GreyLiterature n -> sprintf "Grey literature source: %s" n.Title.Value
-                | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
+                | Unscreened s
+                | Included s
+                | Excluded (s,_,_) ->
+                    match s with
+                    | Bibliographic n -> 
+                        sprintf "%s (%i). %s" 
+                            (if n.Author.IsSome then n.Author.Value.Value else "?") n.Year
+                            (if n.Title.IsSome then n.Title.Value.Value else "?")
+                    | GreyLiterature n -> sprintf "Grey literature source: %s" n.Title.Value
+                    | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
             | ExposureNode e ->
                 match e with
                 | YearNode y -> sprintf "%i cal yr BP" y.Year
@@ -184,20 +188,24 @@ module GraphStructure =
                 | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
             | SourceNode s ->
                 match s with
-                | Bibliographic n -> 
-                    String.concat "_" [
-                        "pub"
-                        (if n.Author.IsSome then n.Author.Value.Value else "unknown")
-                        (if n.Title.IsSome then 
-                            (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
-                            else "notitle")
-                        string n.Year ]
-                | GreyLiterature n -> 
-                    sprintf "grey_%s_%s_%s"
-                        n.Contact.LastName.Value
-                        (n.Contact.FirstName.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
-                        (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
-                | DarkData n -> sprintf "darkdata_%s" n.Contact.LastName.Value
+                | Unscreened s
+                | Included s
+                | Excluded (s,_,_) ->
+                    match s with
+                    | Bibliographic n -> 
+                        String.concat "_" [
+                            "pub"
+                            (if n.Author.IsSome then n.Author.Value.Value else "unknown")
+                            (if n.Title.IsSome then 
+                                (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
+                                else "notitle")
+                            string n.Year ]
+                    | GreyLiterature n -> 
+                        sprintf "grey_%s_%s_%s"
+                            n.Contact.LastName.Value
+                            (n.Contact.FirstName.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
+                            (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
+                    | DarkData n -> sprintf "darkdata_%s" n.Contact.LastName.Value
             | ExposureNode e ->
                 match e with
                 | YearNode y -> sprintf "%iybp" y.Year
@@ -372,3 +380,21 @@ module GraphStructure =
                 |> Result.bind (addRelation proxiedTaxon existingInfer (Population InferredUsing) 1)
                 |> Result.bind (addRelation proxiedTaxon existingTaxon (Population InferredAs) 1)
         }
+
+        /// Get the ID of sink nodes for a specific relation.
+        let nodeIdsByRelation<'a> (relationCase:obj) (atom:Graph.Atom<Node,Relation>) =
+            atom |> snd |> Seq.choose(fun (source,sink,_,r) ->
+                match r with
+                | Relation.Exposure e -> 
+                    if typeof<'a> = typeof<ExposureRelation> then
+                        if e = (relationCase :?> ExposureRelation) then Some sink else None
+                    else None
+                | Relation.Source s -> 
+                    if typeof<'a> = typeof<SourceRelation> then
+                        if s = (relationCase :?> SourceRelation) then Some sink else None
+                    else None
+                | Relation.Population p ->
+                    if typeof<'a> = typeof<PopulationRelation> then
+                        if p = (relationCase :?> PopulationRelation) then Some sink else None
+                    else None
+            )

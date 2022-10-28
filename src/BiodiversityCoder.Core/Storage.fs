@@ -25,13 +25,16 @@ module Storage =
 
     let indexFile = "atom-index.json"
 
-    let loadCacheFile<'a> directory filename : Result<'a,string> =
+    let inline loadCacheFile< ^T> directory filename : Result< ^T,string> =
         if Directory.Exists directory
         then 
             if File.Exists(Path.Combine(directory, filename))
             then 
-                Path.Combine(directory, filename)
-                |> Compact.deserializeFile
+                try
+                    Path.Combine(directory, filename)
+                    |> Compact.deserializeFile
+                    |> Ok
+                with | _ -> Error <| sprintf "Could not deserialise a file as %s (%s)" (typeof< ^T>.Name) filename
             else Error <| sprintf "File does not exist 1: %s" filename
         else Error <| sprintf "Directory does not exist 3: %s" directory
 
@@ -63,11 +66,6 @@ module Storage =
     let replaceIndex directory (nodes:list<NodeIndexItem>) =
         nodes |> makeCacheFile directory indexFile
         |> Result.lift(fun _ -> [])
-
-    /// Read all nodes of the type given in the folder.
-    let getAllNodes<'T> folder =
-        // 1. Translate 'T into a node label.
-        invalidOp "Not implemented"
 
     let loadOrInitGraph<'node, 'rel> directory =
         if not <| Directory.Exists directory
@@ -101,6 +99,22 @@ module Storage =
             <!> graph
             <*> lookup
 
+    /// Fetch a node by it's key
+    let atomByKey<'c> key (graph:FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) =
+        (unwrap graph).Graph |> Seq.tryFind(fun (n,_) -> (snd n).Key() = key)
+
+    /// Fetch a node by it's key
+    let atomsByGuid<'c> (graph:FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) guids =
+        guids
+        |> Seq.choose(fun guid ->
+            (unwrap graph).Graph |> Seq.tryFind(fun (n,_) -> fst n = guid)
+        )
+
+    let replaceNode (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (node:GraphStructure.Node) =
+        failwith "not finished"
+        Ok fileGraph
+
+    /// Add nodes - updating the file-based graph index and individual node files.
     let addNodes (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (nodes:GraphStructure.Node list) = 
         let updatedGraph, addedNodes = 
             Graph.addNodeData nodes (unwrap fileGraph).Graph
@@ -126,7 +140,7 @@ module Storage =
             let saveIndex () =
                 newAtoms
                 |> List.zip nodes
-                |> List.map (fun ((n: ^T),atom) -> 
+                |> List.map (fun (n,atom) -> 
                     { NodeId = (fst (fst atom))
                       NodeTypeName = (n.GetType().Name)
                       NodeKey = n.Key()
