@@ -146,6 +146,7 @@ module GraphStructure =
     /// Routing type to represent all possible relations within
     /// the evidence graph. Can only be created using `makeRelation`,
     /// which constrains relations to valid node types only.
+    [<Newtonsoft.Json.JsonObject(MemberSerialization = Newtonsoft.Json.MemberSerialization.Fields)>]
     type Relation =
         private
         | Source of SourceRelation
@@ -157,7 +158,27 @@ module GraphStructure =
         | Population of PopulationRelation
         | Exposure of ExposureRelation
 
+    let tryAlphanum (c:char) =
+        if System.Char.IsLetter c || System.Char.IsNumber c then Some c else None
+
     type Node with
+
+        member this.NodeType () =
+            match this with
+            | PopulationNode p ->
+                match p with
+                | BioticProxyNode n -> n.GetType().Name
+                | TaxonomyNode n -> n.GetType().Name
+                | InferenceMethodNode n -> n.GetType().Name
+                | ProxiedTaxonNode -> "ProxiedTaxonNode"
+            | SourceNode s -> s.GetType().Name
+            | ExposureNode e ->
+                match e with
+                | YearNode y -> y.GetType().Name
+                | SliceLabelNode n -> n.GetType().Name
+            | OutcomeNode o ->
+                match o with
+                | MeasureNode n -> n.GetType().Name
 
         /// Provides a (non-unique) 'pretty' name for use in user interfaces to display
         /// the node, e.g. in a dropdown list or table.
@@ -209,7 +230,7 @@ module GraphStructure =
                             "pub"
                             (if n.Author.IsSome then n.Author.Value.Value.Split(",").[0] else "unknown")
                             (if n.Title.IsSome then 
-                                (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
+                                (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "")
                                 else "notitle")
                             (if n.Year.IsSome then string n.Year.Value else "noyear") ]
                     | GreyLiterature n -> 

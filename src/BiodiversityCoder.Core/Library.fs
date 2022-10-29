@@ -78,8 +78,12 @@ module App =
     let initModel =
         match Storage.loadOrInitGraph "/Users/andrewmartin/Desktop/test-graph/" with
         | Ok g ->  
-            // TODO If graph has no data, run seed here.
-            { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = Some g; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+            match (g.Nodes<Exposure.TemporalIndex.CalYearNode> ()) with
+            | Some _ -> { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = Some g; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+            | None ->
+                match Storage.seedGraph g with
+                | Ok seeded -> { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = Some seeded; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+                | Error e -> { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = Some e; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
         | Error e -> { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = Some e; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
 
     type Message =
@@ -339,98 +343,114 @@ module App =
                                 | None -> text "Select a source to continue"
                                 | Some source -> concat [
 
-                                    div [ _class "card" ] [
-                                        div [ _class "card-header" ] [ text "Q: Is the source relevant?" ]
-                                        div [ _class "card-body" ] [
-                                            p [] [ text "Please apply the eligbility criteria against the full-text PDF of this source and determine if the source should be included or excluded." ]
-                                            ViewGen.makeNodeForm'<EligbilityCriteria> (Some source.Screening) "Screen" (FormMessage >> dispatch) (fun _ -> true)
-                                        ]
-                                    ]
-
-                                    div [ _class "card" ] [
-                                        div [ _class "card-header" ] [ text "Q: Is it a primary or secondary source?" ]
-                                        div [ _class "card-body" ] [
-                                            p [] [ 
-                                                text "A source may be 'secondary' if it does not contain any new information, but references information in other publications."
-                                                text "You can link this source to the primary sources by selecting an existing source, or adding a new one. Please check that the source does not already exist before creating a new one." ]
-                                            select [ bind.change.string (if model.SelectedSource.IsSome then (model.SelectedSource.Value.SelectedSource |> fst |> snd).Key() else "") (fun k -> SelectSource k |> dispatch) ] [(
-                                                cond (g.Nodes<Sources.SourceNode>()) <| function
-                                                | Some sources ->
-                                                    sources
-                                                    |> Seq.map(fun k ->
-                                                        option [ attr.value k.Key ] [ text k.Value ])
-                                                    |> Seq.toList
-                                                    |> concat
-                                                | None -> empty
-                                            )]
-                                            button [ _class "btn btn-primary" ] [ text "Link to this primary source." ]
-                                            p [] [ text "You may alternatively specify a source we do not already have listed using the below fields. This will be linked to the selected source." ]
+                                    // Allow coding if included, or show exclusion reasons / options.
+                                    cond (source.SelectedSource |> fst |> snd) <| function
+                                    | GraphStructure.Node.SourceNode sn ->
+                                        cond sn <| function
+                                        | Sources.SourceNode.Unscreened s -> 
+                                            concat [
+                                                // Full-text screening options.
+                                                div [ _class "card" ] [
+                                                    div [ _class "card-header" ] [ text "Q: Is the source relevant?" ]
+                                                    div [ _class "card-body" ] [
+                                                        p [] [ text "Please apply the eligbility criteria against the full-text PDF of this source and determine if the source should be included or excluded." ]
+                                                        ViewGen.makeNodeForm'<EligbilityCriteria> (Some source.Screening) "Screen" (FormMessage >> dispatch) (fun _ -> true)
+                                                    ]
+                                                ]
+                                                div [ _class "alert alert-info" ] [ text "Screen this source to continue coding." ]
+                                            ]
+                                        | Sources.SourceNode.Excluded (s,reason,notes) ->
+                                            div [ _class "alert alert-success" ] [ 
+                                                text "This source has been excluded at full-text level."
+                                                textf "The reason stated was: %s" (reason.ToString())
+                                                text notes.Value ]
+                                        | Sources.SourceNode.Included s -> concat [
+                                            p [] [ text "This source has been included at full-text level. Please code information as stated below." ]
                                             div [ _class "card" ] [
-                                                div [ _class "card-header" ] [ text "Add a new source" ]
-                                                text "You may need to reference another source from this source that isn't already in our included sources."
-                                                // TODO relate to master source node.
-                                                ViewGen.makeNodeForm<Sources.SourceNode> (model.NodeCreationViewModels |> Map.tryFind "SourceNode") (FormMessage >> dispatch)
+                                                div [ _class "card-header" ] [ text "Q: Is it a primary or secondary source?" ]
+                                                div [ _class "card-body" ] [
+                                                    p [] [ 
+                                                        text "A source may be 'secondary' if it does not contain any new information, but references information in other publications."
+                                                        text "You can link this source to the primary sources by selecting an existing source, or adding a new one. Please check that the source does not already exist before creating a new one." ]
+                                                    select [ bind.change.string (if model.SelectedSource.IsSome then (model.SelectedSource.Value.SelectedSource |> fst |> snd).Key() else "") (fun k -> SelectSource k |> dispatch) ] [(
+                                                        cond (g.Nodes<Sources.SourceNode>()) <| function
+                                                        | Some sources ->
+                                                            sources
+                                                            |> Seq.map(fun k ->
+                                                                option [ attr.value k.Key ] [ text k.Value ])
+                                                            |> Seq.toList
+                                                            |> concat
+                                                        | None -> empty
+                                                    )]
+                                                    button [ _class "btn btn-primary" ] [ text "Link to this primary source." ]
+                                                    p [] [ text "You may alternatively specify a source we do not already have listed using the below fields. This will be linked to the selected source." ]
+                                                    div [ _class "card" ] [
+                                                        div [ _class "card-header" ] [ text "Add a new source" ]
+                                                        text "You may need to reference another source from this source that isn't already in our included sources."
+                                                        // TODO relate to master source node.
+                                                        ViewGen.makeNodeForm<Sources.SourceNode> (model.NodeCreationViewModels |> Map.tryFind "SourceNode") (FormMessage >> dispatch)
+                                                    ]
+                                                ]
+                                            ]
+
+                                            div [ _class "card" ] [
+                                                div [ _class "card-header" ] [ text "Q: How are the study timeline(s) formed?" ]
+                                                div [ _class "card-body" ] [
+                                                    div [ _class "card text-bg-secondary p-3"] [
+                                                        p [] [ 
+                                                            text "A study timeline is a continuous or discontinuous time-sequence over which biodiversity measures for biotic proxies are specified."
+                                                            text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
+                                                            text "If there are many points in a spatial area - for example individual tree-ring series - but the species are the same, you should specify a single timeline but attach a broader (e.g. regional) spatial context." ]
+                                                        ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
+                                                            (ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliest) savedRelations 
+                                                            && ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatest) savedRelations)
+                                                            || ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.IntersectsTime) savedRelations
+                                                        ) (model.NodeCreationViewModels |> Map.tryFind "IndividualTimelineNode") (FormMessage >> dispatch)
+                                                        ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualTimelineNode> [
+                                                            ("Year", [
+                                                                ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "" (Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) // TODO Uncertainty
+                                                                ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "" (Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) ])
+                                                            ("Qualitative", [
+                                                                ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
+                                                            ])
+                                                        ] model.NodeCreationRelations g (FormMessage >> dispatch)
+                                                        p [] [ 
+                                                            text "Each study timeline is defined by a dating method. Explain these here."
+                                                        ]
+                                                        forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByGuid g ) <| fun timeline ->
+                                                            // TODO once above node is created (study timeline), require a
+                                                            // single relation to a study context.
+                                                            ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") (FormMessage >> dispatch)
+                                                        p [] [ 
+                                                            text "Each study timeline is defined by a dating method. Explain these here."
+                                                        ]
+                                                        forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByGuid g ) <| fun timeline ->
+                                                            // TODO once above node is created (study timeline), require a relation
+                                                            // between that node and these individual date nodes.
+                                                            // Allow insertion of one to many date relations.
+                                                            ViewGen.makeNodeForm<Exposure.StudyTimeline.IndividualDateNode> (model.NodeCreationViewModels |> Map.tryFind "IndividualDateNode") (FormMessage >> dispatch)
+                                                    ]
+                                                    
+                                                    
+                                                    // end make new timeline card.
+                                                ] // end timelines card.
+                                            ]
+
+                                            div [ _class "card" ] [
+                                                div [ _class "card-header" ] [ text "Q: Which biodiversity outcomes are associated with each timeline?" ]
+                                                div [ _class "card-body" ] [
+                                                    p [] [
+                                                        text ""
+                                                    ]
+                                                    forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByGuid g ) <| fun timeline ->
+                                                        
+                                                        
+                                                        
+                                                        empty
+                                                ]
                                             ]
                                         ]
-                                    ]
-
-                                    div [ _class "card" ] [
-                                        div [ _class "card-header" ] [ text "Q: How are the study timeline(s) formed?" ]
-                                        div [ _class "card-body" ] [
-                                            div [ _class "card text-bg-secondary p-3"] [
-                                                p [] [ 
-                                                    text "A study timeline is a continuous or discontinuous time-sequence over which biodiversity measures for biotic proxies are specified."
-                                                    text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
-                                                    text "If there are many points in a spatial area - for example individual tree-ring series - but the species are the same, you should specify a single timeline but attach a broader (e.g. regional) spatial context." ]
-                                                ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
-                                                    (ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliest) savedRelations 
-                                                    && ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatest) savedRelations)
-                                                    || ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.IntersectsTime) savedRelations
-                                                ) (model.NodeCreationViewModels |> Map.tryFind "IndividualTimelineNode") (FormMessage >> dispatch)
-                                                ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualTimelineNode> [
-                                                    ("Year", [
-                                                        ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "" (Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) // TODO Uncertainty
-                                                        ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "" (Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) ])
-                                                    ("Qualitative", [
-                                                        ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
-                                                    ])
-                                                ] model.NodeCreationRelations g (FormMessage >> dispatch)
-                                                p [] [ 
-                                                    text "Each study timeline is defined by a dating method. Explain these here."
-                                                ]
-                                                forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByGuid g ) <| fun timeline ->
-                                                    // TODO once above node is created (study timeline), require a
-                                                    // single relation to a study context.
-                                                    ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") (FormMessage >> dispatch)
-                                                p [] [ 
-                                                    text "Each study timeline is defined by a dating method. Explain these here."
-                                                ]
-                                                forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByGuid g ) <| fun timeline ->
-                                                    // TODO once above node is created (study timeline), require a relation
-                                                    // between that node and these individual date nodes.
-                                                    // Allow insertion of one to many date relations.
-                                                    ViewGen.makeNodeForm<Exposure.StudyTimeline.IndividualDateNode> (model.NodeCreationViewModels |> Map.tryFind "IndividualDateNode") (FormMessage >> dispatch)
-                                            ]
-                                            
-                                            
-                                             // end make new timeline card.
-                                        ] // end timelines card.
-                                    ]
-
-                                    div [ _class "card" ] [
-                                        div [ _class "card-header" ] [ text "Q: Which biodiversity outcomes are associated with each timeline?" ]
-                                        div [ _class "card-body" ] [
-                                            p [] [
-                                                text ""
-                                            ]
-                                            forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByGuid g ) <| fun timeline ->
-                                                
-                                                
-                                                
-                                                empty
-                                        ]
-                                    ]
-
+                                    | _ -> empty // is not a source node.
                                 ] // end source loaded
                             ] // end graph loaded
 

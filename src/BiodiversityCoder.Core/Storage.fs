@@ -51,14 +51,35 @@ module Storage =
         PrettyName: string
     }
 
+    /// Types that are indexed in a single file rather than individual files.
+    let typesToIndex = [ 
+        typeof<Exposure.TemporalIndex.CalYearNode>.Name ]
+
     let loadIndex directory : Result<NodeIndexItem list,string> =
         loadCacheFile directory indexFile
 
+    /// Allow saving specific types into a combined file rather than individual files.
+    /// Useful for time nodes, which are plentiful and very small data-wise.
+    let loadAtomsFromIndex directory (atomType:string) : Result<Map<string,Graph.Atom<'a,'b>>,string> =
+        loadCacheFile directory (sprintf "atom-%s-index.json" (atomType.ToLower()))
+
     let loadAtom directory (atomType:string) (atomKey:string) : Result<Graph.Atom<'a,'b>,string> =
-        loadCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower()))
+        if typesToIndex |> List.contains atomType
+        then 
+            loadAtomsFromIndex directory atomType 
+            |> Result.bind(fun m -> m.TryFind atomKey |> Result.ofOption)
+        else loadCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower()))
+
+    let saveAtomToIndex directory (atomType:string) atomKey item =
+        match loadAtomsFromIndex directory (sprintf "atom-%s-index.json" (atomType.ToLower())) with
+        | Ok items -> items |> Map.add atomKey item
+        | Error _ -> Map.empty |> Map.add atomKey item
+        |> makeCacheFile directory (sprintf "atom-%s-index.json" (atomType.ToLower()))
 
     let saveAtom directory (atomType:string) (atomKey:string) item =
-        makeCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower())) item
+        if typesToIndex |> List.contains atomType
+        then saveAtomToIndex directory atomType atomKey item
+        else makeCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower())) item
 
     let initIndex directory =
         [] |> makeCacheFile directory indexFile
@@ -147,9 +168,9 @@ module Storage =
         }
 
     /// Add nodes - updating the file-based graph index and individual node files.
-    let addNodes (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) nodeType (nodes:GraphStructure.Node list) = 
+    let addNodes' addFn (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) nodeType nodes = 
         let updatedGraph, addedNodes = 
-            Graph.addNodeData nodes (unwrap fileGraph).Graph
+            addFn nodes (unwrap fileGraph).Graph
         
         // Save nodes to cache (individual files).
         let newAtoms = 
@@ -162,21 +183,19 @@ module Storage =
         else
             let saveNodes () =
                 newAtoms
-                |> List.zip nodes
-                |> List.map (fun (n, atom) -> 
-                    saveAtom (unwrap fileGraph).Directory nodeType (n.Key()) atom
+                |> List.map (fun (atom: (System.Guid * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) -> 
+                    saveAtom (unwrap fileGraph).Directory nodeType ((atom |> fst |> snd).Key()) atom
                     )
                 |> Result.ofList
 
             // Save nodes to cached index:
             let saveIndex () =
                 newAtoms
-                |> List.zip nodes
-                |> List.map (fun (n,atom) -> 
+                |> List.map (fun atom -> 
                     { NodeId = (fst (fst atom))
                       NodeTypeName = nodeType
-                      NodeKey = n.Key()
-                      PrettyName = n.DisplayName() })
+                      NodeKey = (atom |> fst |> snd).Key()
+                      PrettyName = (atom |> fst |> snd).DisplayName() })
                 |> mergeIntoIndex (unwrap fileGraph).Directory
 
             saveNodes ()
@@ -184,3 +203,25 @@ module Storage =
             |> Result.lift(fun index -> nodesByType index)
             |> Result.lift (fun nodesByType -> 
                 FileBasedGraph { unwrap fileGraph with Graph = updatedGraph; NodesByType = nodesByType })
+
+    /// Add nodes - updating the file-based graph index and individual node files.
+    let addNodes: FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> string -> seq<GraphStructure.Node> -> Result<FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>,string> = 
+        addNodes' Graph.addNodeData
+
+    /// For adding an atom manually (from seeding)
+    let private addAtomsUnsafe =
+        addNodes' (fun i graph ->  graph |> List.append i, i |> List.map fst)
+
+    /// Add Seed data to an existing graph database. This should ideally be blank
+    /// to avoid any conflicts occurring.
+    let seedGraph (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) = 
+        result {
+            let! seeded = Seed.initGraph()
+            let groupedByType = 
+                seeded
+                |> Seq.groupBy(fun (node,_) -> (snd node).NodeType())
+            return! Seq.fold(fun state (nodeType, atoms) ->
+                state
+                |> Result.bind(fun s -> addAtomsUnsafe s nodeType (atoms |> Seq.toList))
+                ) (Ok fileGraph) groupedByType
+        }
