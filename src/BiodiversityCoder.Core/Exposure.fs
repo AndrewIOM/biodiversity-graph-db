@@ -1,5 +1,7 @@
 ﻿namespace BiodiversityCoder.Core
 
+open Newtonsoft.Json
+
 module Exposure =
 
     open FieldDataTypes
@@ -10,6 +12,7 @@ module Exposure =
         /// An individual date made for a point in a discontinuous
         /// time-series, for example a stratigraphic sequence.
         type IndividualDateNode = {
+            // TODO Refine representation of individual dates.
             TimeEstimate: float<OldDate.calYearBP>
             Date: OldDate.OldDate
             MaterialDated: Text.ShortText
@@ -20,12 +23,12 @@ module Exposure =
         /// Defines an individual temporal extent from a study and place,
         /// as defined within the research itself (not reinterpreted).
         type IndividualTimelineNode =
-            | Continuous of TemporalResolution
-            | Discontinuous of TemporalResolution * Hiatus list
+            | Continuous of resolution:TemporalResolution
+            | Discontinuous of resolution:TemporalResolution * hiatuses:Hiatus list
 
         and TemporalResolution =
             /// time series that have even timesteps, for example tree ring data.
-            | Regular of float<OldDate.calYearBP>
+            | Regular of timestep:float<OldDate.calYearBP>
             /// time series that have uneven timesteps, for example sedimentary data.
             | Irregular
         
@@ -36,7 +39,8 @@ module Exposure =
     /// dates in the past and occurrence data.
     module TemporalIndex =
 
-        type CalYearNode = private CalYear of int<OldDate.calYearBP>
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type CalYearNode = private CalYear of year:int<OldDate.calYearBP>
 
         let private unwrap (CalYear c) = c
         type CalYearNode with
@@ -81,6 +85,7 @@ module Exposure =
         | ExtentLatest              of IndividualTimelineNode * CalYearNode
         | ExtentLatestUncertainty   of IndividualTimelineNode * CalYearNode
         | IntersectsTime            of IndividualTimelineNode * QualitativeLabelNode
+        | ConstructedWithDate       of IndividualTimelineNode * IndividualDateNode
         // from individual temporal extent:
         | HasProxyInfo              of IndividualTimelineNode * Population.ProxiedTaxon.ProxiedTaxonHyperEdge
         | HasOrphanProxy            of IndividualTimelineNode * Population.BioticProxies.BioticProxyNode
@@ -102,6 +107,7 @@ module Exposure =
         | ExtentLatest
         | ExtentLatestUncertainty
         | IntersectsTime
+        | ConstructedWithDate
         | HasProxyInfo
         | HasOrphanProxy
         | IsLocatedAt

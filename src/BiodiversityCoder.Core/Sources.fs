@@ -60,10 +60,11 @@ module Sources =
 
     type SourceNodeRelation =
         | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode
-        | ContainsPrimarySource of SourceNode * SourceNode
+        | UsesPrimarySource of SourceNode * SourceNode
 
     and SourceRelation =
         | HasTemporalExtent
+        | UsesPrimarySource
 
 
 module BibtexParser =

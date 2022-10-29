@@ -226,10 +226,10 @@ module Result =
         | Ok _, Error es -> Error es
         | Error e, Error es -> Error es )
 
-    let ofOption result =
+    let ofOption onError result =
         match result with
         | Some r -> Ok r
-        | None -> Error "Was None"
+        | None -> Error onError
 
     let lower fOk fErr r =
         match r with

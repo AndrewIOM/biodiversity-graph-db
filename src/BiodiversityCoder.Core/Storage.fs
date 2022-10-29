@@ -67,7 +67,7 @@ module Storage =
         if typesToIndex |> List.contains atomType
         then 
             loadAtomsFromIndex directory atomType 
-            |> Result.bind(fun m -> m.TryFind atomKey |> Result.ofOption)
+            |> Result.bind(fun m -> m.TryFind atomKey |> Result.ofOption (sprintf "Could not find atom %s" atomKey))
         else loadCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower()))
 
     let saveAtomToIndex directory (atomType:string) atomKey item =
@@ -139,36 +139,58 @@ module Storage =
             (unwrap graph).Graph |> Seq.tryFind(fun (n,_) -> fst n = guid)
         )
 
-    /// Update the data associated with a node.
-    let updateNode (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) nodeType (node:System.Guid * GraphStructure.Node) =
+    let updateNode' updatedGraph (updatedAtom:(System.Guid * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) fileGraph =
         result {
-            // What do we need to do?
-            // 1. Update the graph itself.
-            let! updatedGraph = (unwrap fileGraph).Graph |> Graph.replaceNodeData node
-            let! updatedAtom = updatedGraph |> Graph.getAtom (fst node) |> Result.ofOption
-            
-            // 2. Update the index item (the pretty name may have changed).
+            // 1. Update the index item (the pretty name may have changed).
             let! oldIndex = loadIndex (unwrap fileGraph).Directory
-            let oldIndexItem = oldIndex |> Seq.find(fun i -> i.NodeId = fst node)
+            let oldIndexItem = oldIndex |> Seq.find(fun i -> i.NodeId = (updatedAtom |> fst |> fst))
             let newIndex =
                 oldIndex |> List.except [oldIndexItem] |> List.append [{
                     NodeId = (updatedAtom |> fst |> fst)
-                    NodeTypeName = nodeType
+                    NodeTypeName = (updatedAtom |> fst |> snd).NodeType()
                     NodeKey = (updatedAtom |> fst |> snd).Key()
                     PrettyName = (updatedAtom |> fst |> snd).DisplayName()
                 }]
             let! _ = replaceIndex (unwrap fileGraph).Directory newIndex
             
-            // 3. Update the individual cached file.
-            let! _ = saveAtom (unwrap fileGraph).Directory nodeType ((snd node).Key()) updatedAtom
+            // 2. Update the individual cached file.
+            let! _ = saveAtom (unwrap fileGraph).Directory ((updatedAtom |> fst |> snd).NodeType()) ((updatedAtom |> fst |> snd).Key()) updatedAtom
             
-            // 4. Update file-based graph record.
+            // 3. Update file-based graph record.
             let newNodesByType = nodesByType newIndex
             return FileBasedGraph { (unwrap fileGraph) with NodesByType = newNodesByType; Graph = updatedGraph }
         }
 
+    /// Update the data associated with a node.
+    let updateNode (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (node:System.Guid * GraphStructure.Node) =
+        result {
+            let! updatedGraph = (unwrap fileGraph).Graph |> Graph.replaceNodeData node
+            let! updatedAtom = updatedGraph |> Graph.getAtom (fst node) |> Result.ofOption (sprintf "Could not find atom %O" (fst node))
+            return! updateNode' updatedGraph updatedAtom fileGraph
+        }
+
+    /// Add a relationship between two nodes.
+    let addRelation (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (source:System.Guid) (sink:System.Guid) relation =
+        result {
+            let! sourceAtom = Graph.getAtom source (unwrap fileGraph).Graph |> Result.ofOption "Source node did not exist"
+            let! sinkAtom = Graph.getAtom sink (unwrap fileGraph).Graph |> Result.ofOption "Sink node did not exist"
+            let! updatedGraph = GraphStructure.Relations.addRelation sourceAtom sinkAtom relation 1 (unwrap fileGraph).Graph
+            let! updatedSourceAtom = updatedGraph |> Graph.getAtom source |> Result.ofOption (sprintf "Could not find atom: %O" source)
+            return! updateNode' updatedGraph updatedSourceAtom fileGraph
+        }
+
+    /// Add a relationship between two nodes.
+    let addRelationByKey (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (source:string) (sink:string) relation =
+        result {
+            let! sourceAtom = atomByKey source fileGraph |> Result.ofOption "Source node did not exist"
+            let! sinkAtom = atomByKey sink fileGraph |> Result.ofOption "Sink node did not exist"
+            let! updatedGraph = GraphStructure.Relations.addRelation sourceAtom sinkAtom relation 1 (unwrap fileGraph).Graph
+            let! updatedSourceAtom = updatedGraph |> Graph.getAtom (sourceAtom |> fst |> fst) |> Result.ofOption (sprintf "Could not find atom: %O" (sourceAtom |> fst |> fst))
+            return! updateNode' updatedGraph updatedSourceAtom fileGraph
+        }
+
     /// Add nodes - updating the file-based graph index and individual node files.
-    let addNodes' addFn (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) nodeType nodes = 
+    let addNodes' addFn (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) nodes = 
         let updatedGraph, addedNodes = 
             addFn nodes (unwrap fileGraph).Graph
         
@@ -184,7 +206,7 @@ module Storage =
             let saveNodes () =
                 newAtoms
                 |> List.map (fun (atom: (System.Guid * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) -> 
-                    saveAtom (unwrap fileGraph).Directory nodeType ((atom |> fst |> snd).Key()) atom
+                    saveAtom (unwrap fileGraph).Directory ((atom |> fst |> snd).NodeType()) ((atom |> fst |> snd).Key()) atom
                     )
                 |> Result.ofList
 
@@ -193,7 +215,7 @@ module Storage =
                 newAtoms
                 |> List.map (fun atom -> 
                     { NodeId = (fst (fst atom))
-                      NodeTypeName = nodeType
+                      NodeTypeName = ((atom |> fst |> snd).Key())
                       NodeKey = (atom |> fst |> snd).Key()
                       PrettyName = (atom |> fst |> snd).DisplayName() })
                 |> mergeIntoIndex (unwrap fileGraph).Directory
@@ -202,15 +224,15 @@ module Storage =
             |> Result.bind (fun _ -> saveIndex())
             |> Result.lift(fun index -> nodesByType index)
             |> Result.lift (fun nodesByType -> 
-                FileBasedGraph { unwrap fileGraph with Graph = updatedGraph; NodesByType = nodesByType })
+                FileBasedGraph { unwrap fileGraph with Graph = updatedGraph; NodesByType = nodesByType }, newAtoms)
 
     /// Add nodes - updating the file-based graph index and individual node files.
-    let addNodes: FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> string -> seq<GraphStructure.Node> -> Result<FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>,string> = 
-        addNodes' Graph.addNodeData
+    let addNodes fileGraph nodes = 
+        addNodes' Graph.addNodeData fileGraph nodes
 
     /// For adding an atom manually (from seeding)
-    let private addAtomsUnsafe =
-        addNodes' (fun i graph ->  graph |> List.append i, i |> List.map fst)
+    let private addAtomsUnsafe fileGraph nodes =
+        addNodes' (fun i graph ->  graph |> List.append i, i |> List.map fst) fileGraph nodes
 
     /// Add Seed data to an existing graph database. This should ideally be blank
     /// to avoid any conflicts occurring.
@@ -220,8 +242,8 @@ module Storage =
             let groupedByType = 
                 seeded
                 |> Seq.groupBy(fun (node,_) -> (snd node).NodeType())
-            return! Seq.fold(fun state (nodeType, atoms) ->
+            return! Seq.fold(fun state (_, atoms) ->
                 state
-                |> Result.bind(fun s -> addAtomsUnsafe s nodeType (atoms |> Seq.toList))
+                |> Result.bind(fun s -> addAtomsUnsafe s (atoms |> Seq.toList) |> Result.map fst)
                 ) (Ok fileGraph) groupedByType
         }

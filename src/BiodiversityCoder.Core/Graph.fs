@@ -301,8 +301,10 @@ module GraphStructure =
                 // Exposure node:
                 | (t: System.Type) when t = typeof<TemporalIndex.CalYearNode> -> n :?> TemporalIndex.CalYearNode |> YearNode |> ExposureNode |> Ok
                 | (t: System.Type) when t = typeof<TemporalIndex.QualitativeLabelNode> -> n :?> TemporalIndex.QualitativeLabelNode |> SliceLabelNode |> ExposureNode |> Ok
+                | (t: System.Type) when t = typeof<StudyTimeline.IndividualTimelineNode> -> n :?> StudyTimeline.IndividualTimelineNode |> TimelineNode |> ExposureNode |> Ok
+                | (t: System.Type) when t = typeof<StudyTimeline.IndividualDateNode> -> n :?> StudyTimeline.IndividualDateNode |> DateNode |> ExposureNode |> Ok
                 // Outcome node:
-                | (t: System.Type) when t = typeof<TemporalIndex.QualitativeLabelNode> -> n :?> TemporalIndex.QualitativeLabelNode |> Exposure.SliceLabelNode |> ExposureNode |> Ok
+                | (t: System.Type) when t = typeof<Outcomes.Biodiversity.BiodiversityDimensionNode> -> n :?> Biodiversity.BiodiversityDimensionNode |> MeasureNode |> OutcomeNode |> Ok
                 | _ -> Error <| sprintf "Not a known node type (%s)" t.Name
             with | e -> Error <| sprintf "Failed to make a node: %s" e.Message
 

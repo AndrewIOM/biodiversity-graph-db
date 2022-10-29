@@ -6,10 +6,14 @@ type NodeViewModel =
     | FieldValue of SimpleValue
     | NotEnteredYet
 
+type RelationViewModel =
+    | ThisIsSource of sinkKey:string * GraphStructure.ProposedRelation
+    | ThisIsSink of sourceKey:string * GraphStructure.ProposedRelation
+
 type FormMessage =
     | EnterNodeCreationData of string * NodeViewModel
     | RelateNodes of string * string * GraphStructure.ProposedRelation
-    | AddOrUpdateNode of System.Type * validateRelations:(seq<GraphStructure.ProposedRelation> -> bool)
+    | AddOrUpdateNode of System.Type * validateRelations:(seq<GraphStructure.ProposedRelation> -> bool) * requiredRelations:RelationViewModel list
     | EnterNodeRelationData of string * GraphStructure.ProposedRelation * sinkKeys:string list
     | ChangeNodeRelationToggle of string * string
     | AddProxiedTaxon of Population.ProxiedTaxon.ProxiedTaxonHyperEdge
@@ -316,24 +320,24 @@ module ViewGen =
                         renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId) formId
             | false -> empty // Unsupported type (not a record or DU).
 
-    let makeNodeForm'<'a> (nodeViewModel: NodeViewModel option) buttonName dispatch validateRelations =
+    let makeNodeForm'<'a> (nodeViewModel: NodeViewModel option) buttonName dispatch validateRelations (requiredRelations:RelationViewModel list) =
         div [ _class "simple-box" ] [
             cond nodeViewModel <| function
             | Some vm -> makeField (typeof<'a>).Name None vm id typeof<'a> dispatch
             | None -> makeField (typeof<'a>).Name None NotEnteredYet id typeof<'a> dispatch
-            button [ _class "btn btn-primary"; on.click (fun _ -> AddOrUpdateNode((typeof<'a>), validateRelations) |> dispatch) ] [ text buttonName ]
+            button [ _class "btn btn-primary"; on.click (fun _ -> AddOrUpdateNode((typeof<'a>), validateRelations, requiredRelations) |> dispatch) ] [ text buttonName ]
         ]
 
     /// Given a node type (maybe a DU or record or normal type),
     /// generate a set of fields to use for inputting the data.
     /// Also, generate a placeholder area for the data to bind to in the
     /// view model, which can then be submitted.
-    let makeNodeForm<'a> (nodeViewModel: NodeViewModel option) dispatch =
-        makeNodeForm'<'a> nodeViewModel "Create" dispatch (fun _ -> true)
+    let makeNodeForm<'a> (nodeViewModel: NodeViewModel option) requiredRelations dispatch =
+        makeNodeForm'<'a> nodeViewModel "Create" dispatch (fun _ -> true) requiredRelations
 
     /// Makes a form to create a new node where relations are also required.
-    let makeNodeFormWithRelations<'a> validateRelations (nodeViewModel: NodeViewModel option) dispatch =
-        makeNodeForm'<'a> nodeViewModel "Create" dispatch validateRelations
+    let makeNodeFormWithRelations<'a> validateRelations (nodeViewModel: NodeViewModel option) requiredRelations dispatch =
+        makeNodeForm'<'a> nodeViewModel "Create" dispatch validateRelations requiredRelations
 
     /// Generate a list of select options based on available nodes in the graph.
     let optionGen<'node> (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option) =
