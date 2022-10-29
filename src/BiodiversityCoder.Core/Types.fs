@@ -1,6 +1,7 @@
 namespace BiodiversityCoder.Core
 
 open System
+open Newtonsoft.Json
 
 type SimpleValue =
     | Number of float
@@ -36,9 +37,10 @@ module FieldDataTypes =
     [<RequireQualifiedAccess>]
     module Text =
 
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type ShortText = private ShortText of string
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type Text = private Text of string
-
         type ShortText with member this.Value =  this |> (fun (ShortText t) -> t)
         type Text with member this.Value =  this |> (fun (Text t) -> t)
 
@@ -63,6 +65,7 @@ module FieldDataTypes =
 
         open System.Globalization
 
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type LanguageCode = private LanguageCode of string
 
         let create (culture:CultureInfo) =
@@ -75,8 +78,11 @@ module FieldDataTypes =
         [<Measure>]
         type DD
 
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type Latitude = private Latitude of float<DD>
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type Longitude = private Longitude of float<DD>
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type Polygon = private Polygon of (Latitude * Longitude) list
 
         let createLatitude lat =
@@ -106,6 +112,7 @@ module FieldDataTypes =
 
         [<Measure>] type cm
 
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type Depth = private Depth of float<cm>
 
         let createDepth i =
@@ -218,6 +225,11 @@ module Result =
         | Error e, Ok _ -> Error e
         | Ok _, Error es -> Error es
         | Error e, Error es -> Error es )
+
+    let ofOption result =
+        match result with
+        | Some r -> Ok r
+        | None -> Error "Was None"
 
     let lower fOk fErr r =
         match r with

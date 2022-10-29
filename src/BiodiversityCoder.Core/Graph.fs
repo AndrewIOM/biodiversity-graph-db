@@ -47,6 +47,17 @@ module Graph =
             graph @ [ newAtom ] //|> Ok
         | _ -> failwith "A node already exists with that ID"
 
+    let replaceNodeData node graph : Result<Graph<'nodeData,_>,string> =
+        let id = fst node
+        match getAtom id graph with
+        | None -> Error "Node doesn't already exist"
+        | Some (oldNode, oldAdjacency) ->
+            let newAtom = (id, (snd node)), oldAdjacency
+            graph 
+            |> List.except [(oldNode, oldAdjacency)]
+            |> List.append [ newAtom ]
+            |> Ok
+
     let addNodeData (items:'nodeData seq) (graph:Graph<'nodeData,_>) =
         Seq.fold(fun (acc,acc2) data ->
                     let newNode = System.Guid.NewGuid(), data
@@ -200,7 +211,7 @@ module GraphStructure =
                             (if n.Title.IsSome then 
                                 (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
                                 else "notitle")
-                            string n.Year.Value ]
+                            (if n.Year.IsSome then string n.Year.Value else "noyear") ]
                     | GreyLiterature n -> 
                         sprintf "grey_%s_%s_%s"
                             n.Contact.LastName.Value

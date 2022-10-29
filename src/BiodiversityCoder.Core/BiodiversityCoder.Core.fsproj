@@ -9,6 +9,7 @@
     <Compile Include="Population.fs" />
     <Compile Include="Exposure.fs" />
     <Compile Include="Sources.fs" />
+    <Compile Include="TaxonomicBackbone.fs" />
     <Compile Include="Graph.fs" />
     <Compile Include="Seed.fs" />
     <Compile Include="Storage.fs" />
@@ -18,6 +19,7 @@
   <ItemGroup>
     <PackageReference Include="Bolero" Version="0.18.16" />
     <PackageReference Include="Cyjs.NET" Version="0.0.4" />
+    <PackageReference Include="FSharp.Data" Version="5.0.2" />
     <PackageReference Include="Microsoft.FSharpLu.Json" Version="0.11.7" />
   </ItemGroup>
 </Project>

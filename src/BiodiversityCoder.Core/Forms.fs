@@ -153,8 +153,8 @@ module Merge =
             | NotEnteredYet
             | FieldValue _ -> Fields(newFields |> Map.map(fun _ vm -> updateNodeViewModel NotEnteredYet vm))
             | Fields oldFields ->
-                if newFields.Count <> 1 then Fields newFields
-                else
+                // if newFields.Count <> 1 then Fields newFields
+                // else
                     let k = newFields |> Seq.head
                     let x = oldFields |> Map.add k.Key k.Value
                     Fields x
@@ -181,7 +181,7 @@ module ViewGen =
             div [ _class "col-sm-10" ] [
                 select [ _class "form-select"; bind.change.string selected (fun s -> s |> dispatch)] [
                     forEach (Reflection.FSharpType.GetUnionCases(t)) <| fun c ->
-                    option [ attr.name c.Name ] [ text c.Name ]
+                    option [ attr.value c.Name ] [ text c.Name ]
                 ]
                 cond field <| function
                 | Some f -> genHelp f

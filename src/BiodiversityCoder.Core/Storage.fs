@@ -35,7 +35,7 @@ module Storage =
                     Path.Combine(directory, filename)
                     |> Compact.deserializeFile
                     |> Ok
-                with | _ -> Error <| sprintf "Could not deserialise a file as %s (%s)" (typeof< ^T>.Name) filename
+                with | e -> Error <| sprintf "Could not deserialise a file as %s (%s). %s" (typeof< ^T>.ToString()) filename e.Message
             else Error <| sprintf "File does not exist 1: %s" filename
         else Error <| sprintf "Directory does not exist 3: %s" directory
 
@@ -64,9 +64,24 @@ module Storage =
         [] |> makeCacheFile directory indexFile
         |> Result.lift(fun _ -> [])
 
+    let mergeIntoIndex directory (nodes:list<NodeIndexItem>) =
+        loadIndex directory
+        |> Result.bind(fun r -> 
+            [ r; nodes ] 
+            |> Seq.concat 
+            |> makeCacheFile directory indexFile
+            |> Result.lift(fun _ -> [r; nodes] |> List.concat ))
+
     let replaceIndex directory (nodes:list<NodeIndexItem>) =
         nodes |> makeCacheFile directory indexFile
-        |> Result.lift(fun _ -> [])
+
+    // Reorganise index into desired lookup.
+    let nodesByType index =
+        index
+        |> Seq.groupBy(fun i -> i.NodeTypeName)
+        |> Seq.map(fun (g,l) -> 
+            g, (l |> Seq.map(fun n -> n.NodeKey, n.PrettyName) |> Map.ofSeq))
+        |> Map.ofSeq
 
     let loadOrInitGraph<'node, 'rel> directory =
         if not <| Directory.Exists directory
@@ -78,15 +93,7 @@ module Storage =
                 else initIndex directory
 
             // Reorganise index into desired lookup.
-            let lookup =
-                index
-                |> Result.lift(fun r ->
-                    r 
-                    |> Seq.groupBy(fun i -> i.NodeTypeName)
-                    |> Seq.map(fun (g,l) -> 
-                        g, (l |> Seq.map(fun n -> n.NodeKey, n.PrettyName) |> Map.ofSeq))
-                    |> Map.ofSeq
-                )
+            let nodesByType = Result.lift nodesByType index
 
             let graph : Result<Graph.Graph<'node,'rel>,string> =
                 index 
@@ -98,7 +105,7 @@ module Storage =
             
             (fun g i -> FileBasedGraph { Graph = g; NodesByType = i; Directory = directory })
             <!> graph
-            <*> lookup
+            <*> nodesByType
 
     /// Fetch a node by it's key
     let atomByKey<'c> key (graph:FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) =
@@ -111,12 +118,36 @@ module Storage =
             (unwrap graph).Graph |> Seq.tryFind(fun (n,_) -> fst n = guid)
         )
 
-    let replaceNode (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (node:GraphStructure.Node) =
-        failwith "not finished"
-        Ok fileGraph
+    /// Update the data associated with a node.
+    let updateNode (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) nodeType (node:System.Guid * GraphStructure.Node) =
+        result {
+            // What do we need to do?
+            // 1. Update the graph itself.
+            let! updatedGraph = (unwrap fileGraph).Graph |> Graph.replaceNodeData node
+            let! updatedAtom = updatedGraph |> Graph.getAtom (fst node) |> Result.ofOption
+            
+            // 2. Update the index item (the pretty name may have changed).
+            let! oldIndex = loadIndex (unwrap fileGraph).Directory
+            let oldIndexItem = oldIndex |> Seq.find(fun i -> i.NodeId = fst node)
+            let newIndex =
+                oldIndex |> List.except [oldIndexItem] |> List.append [{
+                    NodeId = (updatedAtom |> fst |> fst)
+                    NodeTypeName = nodeType
+                    NodeKey = (updatedAtom |> fst |> snd).Key()
+                    PrettyName = (updatedAtom |> fst |> snd).DisplayName()
+                }]
+            let! _ = replaceIndex (unwrap fileGraph).Directory newIndex
+            
+            // 3. Update the individual cached file.
+            let! _ = saveAtom (unwrap fileGraph).Directory nodeType ((snd node).Key()) updatedAtom
+            
+            // 4. Update file-based graph record.
+            let newNodesByType = nodesByType newIndex
+            return FileBasedGraph { (unwrap fileGraph) with NodesByType = newNodesByType; Graph = updatedGraph }
+        }
 
     /// Add nodes - updating the file-based graph index and individual node files.
-    let addNodes (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (nodes:GraphStructure.Node list) = 
+    let addNodes (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) nodeType (nodes:GraphStructure.Node list) = 
         let updatedGraph, addedNodes = 
             Graph.addNodeData nodes (unwrap fileGraph).Graph
         
@@ -133,7 +164,7 @@ module Storage =
                 newAtoms
                 |> List.zip nodes
                 |> List.map (fun (n, atom) -> 
-                    saveAtom (unwrap fileGraph).Directory (n.GetType().Name) (n.Key()) atom
+                    saveAtom (unwrap fileGraph).Directory nodeType (n.Key()) atom
                     )
                 |> Result.ofList
 
@@ -143,11 +174,13 @@ module Storage =
                 |> List.zip nodes
                 |> List.map (fun (n,atom) -> 
                     { NodeId = (fst (fst atom))
-                      NodeTypeName = (n.GetType().Name)
+                      NodeTypeName = nodeType
                       NodeKey = n.Key()
                       PrettyName = n.DisplayName() })
-                |> replaceIndex (unwrap fileGraph).Directory
+                |> mergeIntoIndex (unwrap fileGraph).Directory
 
             saveNodes ()
             |> Result.bind (fun _ -> saveIndex())
-            |> Result.lift (fun _ -> FileBasedGraph { unwrap fileGraph with Graph = updatedGraph })
+            |> Result.lift(fun index -> nodesByType index)
+            |> Result.lift (fun nodesByType -> 
+                FileBasedGraph { unwrap fileGraph with Graph = updatedGraph; NodesByType = nodesByType })
