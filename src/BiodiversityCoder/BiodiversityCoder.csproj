@@ -12,13 +12,13 @@
 		<EnableDefaultCssItems>false</EnableDefaultCssItems>
 
 		<!-- Display name -->
-		<ApplicationTitle>BiodiversityCoder</ApplicationTitle>
+		<ApplicationTitle>Systematic Map Coding Tool</ApplicationTitle>
 
 		<!-- App Identifier -->
-		<ApplicationId>com.companyname.biodiversitycoder</ApplicationId>
+		<ApplicationId>im.acm.biodiversitycoder</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationVersion>1</ApplicationVersion>
+		<ApplicationVersion>1.0.0</ApplicationVersion>
 
 		<!-- Required for C# Hot Reload -->
 		<SupportedOSPlatformVersion Condition="'$(TargetFramework)' == 'net6.0-maccatalyst'">14.0</SupportedOSPlatformVersion>
