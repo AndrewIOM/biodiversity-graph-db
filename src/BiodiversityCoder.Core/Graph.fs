@@ -176,6 +176,8 @@ module GraphStructure =
                 match e with
                 | YearNode y -> y.GetType().Name
                 | SliceLabelNode n -> n.GetType().Name
+                | TimelineNode n -> n.GetType().Name
+                | DateNode n -> n.GetType().Name
             | OutcomeNode o ->
                 match o with
                 | MeasureNode n -> n.GetType().Name
@@ -207,6 +209,8 @@ module GraphStructure =
                 match e with
                 | YearNode y -> sprintf "%i cal yr BP" y.Year
                 | SliceLabelNode n -> n.Name
+                | TimelineNode n -> "A study timeline"
+                | DateNode n -> "An individual date"
             | OutcomeNode o ->
                 match o with
                 | MeasureNode n -> n.ToString()
@@ -243,6 +247,8 @@ module GraphStructure =
                 match e with
                 | YearNode y -> sprintf "%iybp" y.Year
                 | SliceLabelNode n -> n.Name
+                | TimelineNode n -> "notunique"
+                | DateNode n -> "notunique"
             | OutcomeNode o ->
                 match o with
                 | MeasureNode n -> n.ToString()

@@ -60,10 +60,10 @@ module Storage =
 
     /// Allow saving specific types into a combined file rather than individual files.
     /// Useful for time nodes, which are plentiful and very small data-wise.
-    let loadAtomsFromIndex directory (atomType:string) : Result<Map<string,Graph.Atom<'a,'b>>,string> =
+    let loadAtomsFromIndex directory (atomType:string) : Result<Map<string,Graph.Atom<'a, 'b>>,string> =
         loadCacheFile directory (sprintf "atom-%s-index.json" (atomType.ToLower()))
 
-    let loadAtom directory (atomType:string) (atomKey:string) : Result<Graph.Atom<'a,'b>,string> =
+    let loadAtom directory (atomType:string) (atomKey:string) : Result<Graph.Atom<'a, 'b>,string> =
         if typesToIndex |> List.contains atomType
         then 
             loadAtomsFromIndex directory atomType 
@@ -71,12 +71,14 @@ module Storage =
         else loadCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower()))
 
     let saveAtomToIndex directory (atomType:string) atomKey item =
-        match loadAtomsFromIndex directory (sprintf "atom-%s-index.json" (atomType.ToLower())) with
-        | Ok items -> items |> Map.add atomKey item
-        | Error _ -> Map.empty |> Map.add atomKey item
-        |> makeCacheFile directory (sprintf "atom-%s-index.json" (atomType.ToLower()))
+        let file = (sprintf "atom-%s-index.json" (atomType.ToLower()))
+        if File.Exists <| Path.Combine(directory, file) then
+            loadAtomsFromIndex directory atomType
+            |> Result.lift (Map.add atomKey item)
+            |> Result.bind (makeCacheFile directory file)
+        else Map.empty |> Map.add atomKey item |> makeCacheFile directory file
 
-    let saveAtom directory (atomType:string) (atomKey:string) item =
+    let saveAtom directory (atomType:string) (atomKey:string) (item:(System.Guid * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) =
         if typesToIndex |> List.contains atomType
         then saveAtomToIndex directory atomType atomKey item
         else makeCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower())) item
@@ -215,7 +217,7 @@ module Storage =
                 newAtoms
                 |> List.map (fun atom -> 
                     { NodeId = (fst (fst atom))
-                      NodeTypeName = ((atom |> fst |> snd).Key())
+                      NodeTypeName = ((atom |> fst |> snd).NodeType())
                       NodeKey = (atom |> fst |> snd).Key()
                       PrettyName = (atom |> fst |> snd).DisplayName() })
                 |> mergeIntoIndex (unwrap fileGraph).Directory
