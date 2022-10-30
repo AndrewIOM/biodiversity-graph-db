@@ -70,6 +70,16 @@ module Storage =
             |> Result.bind(fun m -> m.TryFind atomKey |> Result.ofOption (sprintf "Could not find atom %s" atomKey))
         else loadCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower()))
 
+    let loadAtoms directory (atomType:string) (atomKeys:string list) : Result<list<Graph.Atom<'a, 'b>>,string> =
+        if typesToIndex |> List.contains atomType
+        then 
+            loadAtomsFromIndex directory atomType
+            |> Result.lift(fun map -> map |> Map.toList |> List.map snd)
+        else 
+            atomKeys
+            |> List.map(fun atomKey -> loadCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower())))
+            |> Result.ofList
+
     let saveAtomToIndex directory (atomType:string) atomKey item =
         let file = (sprintf "atom-%s-index.json" (atomType.ToLower()))
         if File.Exists <| Path.Combine(directory, file) then
@@ -82,6 +92,25 @@ module Storage =
         if typesToIndex |> List.contains atomType
         then saveAtomToIndex directory atomType atomKey item
         else makeCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) (atomKey.ToLower())) item
+
+    let saveAtomsToIndex directory (atomType:string) (items:seq<(System.Guid * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>>) =
+        let file = (sprintf "atom-%s-index.json" (atomType.ToLower()))
+        let addItemsToMap m = Seq.fold (fun map (i: (System.Guid * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) -> Map.add ((i |> fst |> snd).Key()) i map) m items
+        if File.Exists <| Path.Combine(directory, file) then
+            loadAtomsFromIndex directory atomType
+            |> Result.lift addItemsToMap
+            |> Result.bind (makeCacheFile directory file)
+        else Map.empty |> addItemsToMap |> makeCacheFile directory file
+
+    let saveAtoms directory (atomType:string) (items:seq<(System.Guid * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>>) =
+        if typesToIndex |> List.contains atomType
+        then saveAtomsToIndex directory atomType items
+        else 
+            items
+            |> Seq.map(fun a -> makeCacheFile directory (sprintf "atom-%s-%s.json" (atomType.ToLower()) ((a |> fst |> snd).Key().ToLower())) a)
+            |> Seq.toList
+            |> Result.ofList
+            |> Result.lift(fun _ -> ())
 
     let initIndex directory =
         [] |> makeCacheFile directory indexFile
@@ -121,9 +150,12 @@ module Storage =
             let graph : Result<Graph.Graph<'node,'rel>,string> =
                 index 
                 |> Result.bind(fun i ->
-                    i |> List.map(fun ni ->
-                        loadAtom directory ni.NodeTypeName ni.NodeKey
-                    ) |> Result.ofList
+                    i 
+                    |> List.groupBy(fun i -> i.NodeTypeName)
+                    |> List.map(fun (nodeType, nodes) ->
+                        loadAtoms directory nodeType (nodes |> List.map(fun n -> n.NodeKey)))
+                    |> Result.ofList
+                    |> Result.map List.concat
                 )
             
             (fun g i -> FileBasedGraph { Graph = g; NodesByType = i; Directory = directory })
@@ -172,12 +204,10 @@ module Storage =
         }
 
     /// Add a relationship between two nodes.
-    let addRelation (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (source:System.Guid) (sink:System.Guid) relation =
+    let addRelation (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) sourceAtom sinkAtom relation =
         result {
-            let! sourceAtom = Graph.getAtom source (unwrap fileGraph).Graph |> Result.ofOption "Source node did not exist"
-            let! sinkAtom = Graph.getAtom sink (unwrap fileGraph).Graph |> Result.ofOption "Sink node did not exist"
             let! updatedGraph = GraphStructure.Relations.addRelation sourceAtom sinkAtom relation 1 (unwrap fileGraph).Graph
-            let! updatedSourceAtom = updatedGraph |> Graph.getAtom source |> Result.ofOption (sprintf "Could not find atom: %O" source)
+            let! updatedSourceAtom = updatedGraph |> Graph.getAtom (sourceAtom |> fst |> fst) |> Result.ofOption (sprintf "Could not find atom: %O" (sourceAtom |> fst |> fst))
             return! updateNode' updatedGraph updatedSourceAtom fileGraph
         }
 
@@ -207,8 +237,9 @@ module Storage =
         else
             let saveNodes () =
                 newAtoms
-                |> List.map (fun (atom: (System.Guid * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) -> 
-                    saveAtom (unwrap fileGraph).Directory ((atom |> fst |> snd).NodeType()) ((atom |> fst |> snd).Key()) atom
+                |> List.groupBy(fun ((_,(n:GraphStructure.Node)),_) -> n.NodeType())
+                |> List.map (fun (nodeType, atoms) -> 
+                    saveAtoms (unwrap fileGraph).Directory nodeType atoms
                     )
                 |> Result.ofList
 

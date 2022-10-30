@@ -96,12 +96,12 @@ module App =
         | ImportColandr
         | FormMessage of FormMessage
         | SelectSource of key:string
-        | ScreenSource of NodeViewModel
         | LookupTaxon of LookupTaxonMessage
 
     and LookupTaxonMessage =
         | ChangeFormFields of TaxonomicLookupModel
         | RunLookup
+        | SaveTaxonResult
 
     let update (openFolder:unit -> Task<string>) message model =
         match message with
@@ -222,15 +222,63 @@ module App =
                     | None -> { model with Error = Some (sprintf "Could not find type of %s" nodeType.Name) }, Cmd.none
             | EnterNodeRelationData(_, _, sinkKeys) -> failwith "Not Implemented"
             | ChangeNodeRelationToggle(_, _) -> failwith "Not Implemented"
-        | ScreenSource(_) -> failwith "Not Implemented"
         | LookupTaxon l ->
             match l with
-            | ChangeFormFields f -> { model with TaxonLookup = f }, Cmd.none
+            | ChangeFormFields f -> 
+                match f.Rank with
+                | "Family" -> { model with TaxonLookup = { Result = None; Rank = "Family"; Family = f.Family; Genus = ""; Species = ""; Authorship = "" }}, Cmd.none
+                | "Genus" -> { model with TaxonLookup = { Result = None; Rank = "Genus"; Family = f.Family; Genus = f.Genus; Species = ""; Authorship = "" }}, Cmd.none
+                | "Species" -> { model with TaxonLookup = { Result = None; Rank = "Species"; Family = f.Family; Genus = f.Genus; Species = f.Species; Authorship = f.Authorship }}, Cmd.none
+                | _ -> model, Cmd.none
             | RunLookup ->
                 let run = TaxonomicBackbone.GlobalPollenProject.lookupAsNodesAndRelations model.TaxonLookup.Rank model.TaxonLookup.Family model.TaxonLookup.Genus model.TaxonLookup.Species model.TaxonLookup.Authorship
                 match run with
                 | Ok t -> { model with TaxonLookup = { model.TaxonLookup with Result = Some t } }, Cmd.none
                 | Error e -> { model with Error = Some e }, Cmd.none
+            | SaveTaxonResult ->
+                match model.TaxonLookup.Result with
+                | None -> { model with Error = Some "Cannot save taxon, as none was found" }, Cmd.none
+                | Some (taxon, relations) ->
+                    match model.Graph with
+                    | None -> { model with Error = Some "Cannot save taxon, as graph is not loaded" }, Cmd.none
+                    | Some g ->
+                        let add () =
+                            result {
+                                let nodes =
+                                    relations
+                                    |> List.collect(fun r ->
+                                        match r with
+                                        | Population.PopulationNodeRelation.IsA(source, sink) ->
+                                            [ source; sink ]
+                                        | _ -> [])
+                                    |> List.append [ taxon ]
+                                    |> List.distinct
+                                    |> List.map(GraphStructure.TaxonomyNode >> GraphStructure.Node.PopulationNode)
+
+                                let! updatedGraph, updatedNodes = Storage.addNodes g nodes
+
+                                let relationsByKey =
+                                    relations
+                                    |> List.choose(fun r ->
+                                        match r with
+                                        | Population.PopulationNodeRelation.IsA(source, sink) ->
+                                            Some (
+                                                GraphStructure.ProposedRelation.Population <| Population.PopulationRelation.IsA,
+                                                ((updatedNodes |> Seq.find(fun a -> (a |> fst |> snd).Key() = (source |> GraphStructure.TaxonomyNode |> GraphStructure.Node.PopulationNode).Key())) |> fun ((a,_),c) -> ((a,source),c)),
+                                                ((updatedNodes |> Seq.find(fun a -> (a |> fst |> snd).Key() = (sink |> GraphStructure.TaxonomyNode |> GraphStructure.Node.PopulationNode).Key())) |> fun ((a,_),c) -> ((a,sink),c))
+                                            )
+                                        | _ -> None)
+
+                                let! updatedGraphWithRels =
+                                    Seq.fold(fun g (rel, source, sink) -> 
+                                        g |> Result.bind(fun g -> 
+                                            Storage.addRelation g source sink rel)) (Ok updatedGraph) relationsByKey
+                                return updatedGraphWithRels
+                            }
+                        match add () with
+                        | Ok g -> { model with Graph = Some g; TaxonLookup = { Result = None; Rank = "Family"; Family = ""; Genus = ""; Species = ""; Authorship = "" }}, Cmd.none
+                        | Error e -> { model with Error = Some e }, Cmd.none    
+
 
     let _class = attr.``class``
 
@@ -260,6 +308,57 @@ module App =
                                 h2 [] [ text "Population" ]
                                 p [] [ text "List existing population nodes and create new ones." ]
                                 img [ attr.src "images/population-diagram.png" ]
+                                p [] [ 
+                                    text "Use the forms on this page to add new options for taxonomic nodes."
+                                    text "Plant taxa are created by validating names against a taxonomic backbone." ]
+
+                                // Allow linking to taxonomic backbone here.
+                                div [ _class "card text-bg-secondary" ] [
+                                    div [ _class "card-header" ] [ text "Add a plant taxonomic name" ]
+                                    div [ _class "card-body" ] [
+                                        div [ _class "row g-3" ] [
+                                            div [ _class "col" ] [
+                                                label [] [ text "Rank" ]
+                                                select [ _class "form-select"; bind.change.string model.TaxonLookup.Rank (fun i -> { model.TaxonLookup with Rank = i} |> ChangeFormFields |> LookupTaxon |> dispatch) ] [
+                                                    option [ attr.value "Family" ] [ text "Family" ]
+                                                    option [ attr.value "Genus" ] [ text "Genus" ]
+                                                    option [ attr.value "Species" ] [ text "Species" ]
+                                                ]
+                                            ]
+                                            div [ _class "col-md-3" ] [
+                                                label [] [ text "Family" ]
+                                                input [ _class "form-control"; bind.input.string model.TaxonLookup.Family (fun f -> { model.TaxonLookup with Family = f} |> ChangeFormFields |> LookupTaxon |> dispatch) ]
+                                            ]
+                                            div [ _class "col-md-3" ] [
+                                                label [] [ text "Genus" ]
+                                                input [ _class "form-control"; bind.input.string model.TaxonLookup.Genus (fun g -> { model.TaxonLookup with Genus = g} |> ChangeFormFields |> LookupTaxon |> dispatch) ]
+                                            ]
+                                            div [ _class "col-md-3" ] [
+                                                label [] [ text "Species" ]
+                                                input [ _class "form-control"; bind.input.string model.TaxonLookup.Species (fun s -> { model.TaxonLookup with Species = s} |> ChangeFormFields |> LookupTaxon |> dispatch) ]
+                                            ]
+                                            div [ _class "col-md-3" ] [
+                                                label [] [ text "Authorship" ]
+                                                input [ _class "form-control"; bind.input.string model.TaxonLookup.Authorship (fun a -> { model.TaxonLookup with Authorship = a} |> ChangeFormFields |> LookupTaxon |> dispatch) ]
+                                            ]
+                                        ]
+
+                                        cond <| model.TaxonLookup.Result <| function
+                                        | Some (taxon, relations) -> concat [
+                                                // TODO better display of taxa found
+                                                p [] [ textf "The taxon found is: %A" taxon ]
+                                                p [] [ textf "This is the heirarchy: %A" relations ]
+                                                button [ _class "btn btn-primary"; on.click(fun _ -> SaveTaxonResult |> LookupTaxon |> dispatch) ] [ text "Confirm: add these taxa" ]
+                                                button [ _class "btn btn-danger"; on.click (fun _ -> ChangeFormFields { Rank = "Family"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None } |> LookupTaxon |> dispatch)] [ text "Reset" ]
+                                            ]
+                                        | None ->
+                                            div [ _class "col-12" ] [
+                                                button [ _class "btn btn-primary"; on.click (fun _ -> RunLookup |> LookupTaxon |> dispatch)] [ text "Lookup name in taxonomic backbone" ]
+                                                button [ _class "btn btn-danger"; on.click (fun _ -> ChangeFormFields { Rank = "Family"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None } |> LookupTaxon |> dispatch)] [ text "Reset" ]
+                                            ]
+                                    ]
+                                ]
+
                                 h3 [] [ text "Context" ]
                                 hr []
                                 p [] [ text "You can relate `timelines` to a spatial context, represented by a Context node." ]
@@ -471,43 +570,47 @@ module App =
                                                         text "If a taxon is not present that you need, you can use the taxonomic lookup (requires internet connection) to create new taxon nodes."
                                                         text "Similarly, if you need a new biotic proxy node or inference node, make these manually in the 'Population' tab to the left."
                                                     ]
+
                                                     // 3. For each study timeline, add proxied taxa.
                                                     forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByGuid g ) <| fun timeline ->
                                                         // Display existing and add new proxied taxa
                                                         // Proxied taxa are related to an outcome too.
-                                                        div [] [
-                                                            p [] [ textf "Timeline" ]
-                                                            table [ _class "table" ] [
-                                                                thead [] [
-                                                                    tr [] [
-                                                                        th [ attr.scope "column" ] [ text "Biotic Proxy" ]
-                                                                        th [ attr.scope "column" ] [ text "Inference Method" ]
-                                                                        th [ attr.scope "column" ] [ text "Botanical Taxon / Taxa" ]
-                                                                        th [ attr.scope "column" ] [ text "Measured by" ]
-                                                                    ]
-                                                                ]
-                                                                tbody [] [
-                                                                    // Add a new one. form in here.
-                                                                    // Existing proxied taxa:
+                                                        concat [
 
-                                                                    // Manually build the hyperedge form in here.
-
-                                                                    tr [] [                                                                    
-                                                                        td [] [ select [] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
-                                                                        td [] [ select [] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                        td [] [ select [] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
-                                                                        td [] [ select [] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ]
-                                                                    ]
-                                                                    forEach [ 1 .. 7 ] <| fun proxiedTaxa ->
+                                                            div [] [
+                                                                p [] [ textf "Timeline" ]
+                                                                table [ _class "table" ] [
+                                                                    thead [] [
                                                                         tr [] [
-                                                                            td [] [ text "Betula (pollen morphotype)" ]
-                                                                            td [] [ text "Implicit" ]
-                                                                            td [] [ text "Betula" ]
-                                                                            td [] [ text "Abundance" ]
+                                                                            th [ attr.scope "column" ] [ text "Biotic Proxy" ]
+                                                                            th [ attr.scope "column" ] [ text "Inference Method" ]
+                                                                            th [ attr.scope "column" ] [ text "Botanical Taxon / Taxa" ]
+                                                                            th [ attr.scope "column" ] [ text "Measured by" ]
                                                                         ]
+                                                                    ]
+                                                                    tbody [] [
+                                                                        // Add a new one. form in here.
+                                                                        // Existing proxied taxa:
+
+                                                                        // Manually build the hyperedge form in here.
+
+                                                                        tr [] [                                                                    
+                                                                            td [] [ select [] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                                            td [] [ select [] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                                            td [] [ select [] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                                            td [] [ select [] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ]
+                                                                        ]
+                                                                        forEach [ 1 .. 7 ] <| fun proxiedTaxa ->
+                                                                            tr [] [
+                                                                                td [] [ text "Betula (pollen morphotype)" ]
+                                                                                td [] [ text "Implicit" ]
+                                                                                td [] [ text "Betula" ]
+                                                                                td [] [ text "Abundance" ]
+                                                                            ]
+                                                                    ]
                                                                 ]
                                                             ]
-                                                        ]                                                        
+                                                        ]
                                                 ]
                                             ] // end outcomes card
 

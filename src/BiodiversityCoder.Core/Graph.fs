@@ -91,6 +91,7 @@ module Graph =
             ) [] graph
 
     /// Connect two nodes together given a relationship.
+    /// If an identical relation already exists, it will not be duplicated.
     let addRelation (sourceId:System.Guid) sinkId weight connData (graph:Graph<_,_>) : Result<Graph<'nodeData,'connData>,string> =
         let source = graph |> List.tryFind(fun n -> fst (fst n) = sourceId)
         let sink = graph |> List.tryFind(fun n -> fst (fst n) = sourceId)
@@ -102,7 +103,10 @@ module Graph =
                 if i = source.Value
                 then
                     let conn : Connection<'connData> = (sourceId, sinkId, weight, connData)
-                    let adjacency = conn :: snd source.Value
+                    let adjacency = 
+                        if (snd i) |> Seq.contains conn
+                        then snd source.Value
+                        else conn :: snd source.Value
                     (fst source.Value, adjacency)
                 else i)
             |> Ok
@@ -146,9 +150,9 @@ module GraphStructure =
     /// Routing type to represent all possible relations within
     /// the evidence graph. Can only be created using `makeRelation`,
     /// which constrains relations to valid node types only.
-    [<Newtonsoft.Json.JsonObject(MemberSerialization = Newtonsoft.Json.MemberSerialization.Fields)>]
+    // TODO see below. [<Newtonsoft.Json.JsonObject(MemberSerialization = Newtonsoft.Json.MemberSerialization.Fields)>]
     type Relation =
-        private
+        // private. TODO figure out how to get Json.net to deserialise this when private.
         | Source of SourceRelation
         | Population of PopulationRelation
         | Exposure of ExposureRelation
@@ -167,20 +171,24 @@ module GraphStructure =
             match this with
             | PopulationNode p ->
                 match p with
-                | BioticProxyNode n -> n.GetType().Name
-                | TaxonomyNode n -> n.GetType().Name
-                | InferenceMethodNode n -> n.GetType().Name
+                | BioticProxyNode n -> "BioticProxyNode"
+                | TaxonomyNode n -> "TaxonNode"
+                | InferenceMethodNode n -> "InferenceMethodNode"
                 | ProxiedTaxonNode -> "ProxiedTaxonNode"
-            | SourceNode s -> s.GetType().Name
+            | SourceNode s ->
+                match s with
+                | Unscreened s2 -> "SourceNode"
+                | Included s2 -> "SourceNode"
+                | Excluded (s2,_,_) -> "SourceNode"
             | ExposureNode e ->
                 match e with
-                | YearNode y -> y.GetType().Name
-                | SliceLabelNode n -> n.GetType().Name
-                | TimelineNode n -> n.GetType().Name
-                | DateNode n -> n.GetType().Name
+                | YearNode y -> "CalYearNode"
+                | SliceLabelNode n -> "QualitativeLabelNode"
+                | TimelineNode n -> "IndividualTimelineNode"
+                | DateNode n -> "IndividualDateNode"
             | OutcomeNode o ->
                 match o with
-                | MeasureNode n -> n.GetType().Name
+                | MeasureNode n -> "BiodiversityDimensionNode"
 
         /// Provides a (non-unique) 'pretty' name for use in user interfaces to display
         /// the node, e.g. in a dropdown list or table.
@@ -219,8 +227,18 @@ module GraphStructure =
             match this with
             | PopulationNode p ->
                 match p with
-                | BioticProxyNode n -> n.ToString() // TODO
-                | TaxonomyNode n -> n.ToString() // TODO
+                | BioticProxyNode n -> n.ToString()
+                | TaxonomyNode n ->
+                    match n with
+                    | Taxonomy.TaxonNode.Life -> "Life"
+                    | Taxonomy.TaxonNode.Kingdom l -> sprintf "Kingdom_%s" l.Value
+                    | Taxonomy.TaxonNode.Phylum l -> sprintf "Phylum_%s" l.Value
+                    | Taxonomy.TaxonNode.Class l -> sprintf "Class_%s" l.Value
+                    | Taxonomy.TaxonNode.Order l -> sprintf "Order_%s" l.Value
+                    | Taxonomy.TaxonNode.Family l -> sprintf "Family_%s" l.Value
+                    | Taxonomy.TaxonNode.Genus l -> sprintf "Genus_%s" l.Value
+                    | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "Species_%s_%s_%s" l.Value l2.Value (System.Net.WebUtility.HtmlEncode(l3.Value))
+                    | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "Subspecies_%s_%s_%s_%s" l.Value l2.Value l3.Value (System.Net.WebUtility.HtmlEncode(l4.Value))
                 | InferenceMethodNode n -> n.ToString() // TODO
                 | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
             | SourceNode s ->
@@ -396,6 +414,7 @@ module GraphStructure =
 
         /// Add a node relation to the graph, validating that the relation
         /// can only occur on valid node sources / sinks in the process.
+        /// Will not add relation when same source * sink * relation is specified.
         let addRelation (atom1:Graph.Atom<'data,'conn>) (atom2:Graph.Atom<'data2,'conn2>) rel weight (graph:Graph.Graph<'a,Relation>) =
             result {
                 let! validated = makeRelation (fst atom1) (fst atom2) rel
