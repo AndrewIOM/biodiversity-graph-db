@@ -25,14 +25,14 @@ module Seed =
 
             return!
                 graph
-                |> Graph.addNodeData [
+                |> Graph.addNodeData makeUniqueKey [
                     PopulationNode (BioticProxyNode proxyNode)
                     PopulationNode (InferenceMethodNode inferNode)
-                    PopulationNode (TaxonomyNode taxonNode) ] |> fst
-                |> Relations.addProxiedTaxon {
+                    PopulationNode (TaxonomyNode taxonNode) ] |> Result.lift fst
+                |> Result.bind (Relations.addProxiedTaxon {
                     InferredFrom = proxyNode
                     InferredUsing = inferNode
-                    InferredAs = taxonNode }
+                    InferredAs = taxonNode })
         }
 
     /// Import all sources from a bibtext file.
@@ -40,7 +40,7 @@ module Seed =
         let bibText = System.IO.File.ReadAllText(path)
         BibtexParser.parse bibText
         |> Result.lift(fun sources ->
-            Graph.addNodeData (sources |> List.map(fun source -> SourceNode (Unscreened source))) graph)
+            Graph.addNodeData makeUniqueKey (sources |> List.map(fun source -> SourceNode (Unscreened source))) graph)
 
     /// Initalise a graph with the core nodes required for the research question.
     let initGraph () =
@@ -50,33 +50,39 @@ module Seed =
 
         // Exposure: Holocene time index
         let addTimeIndexNodes graph = 
-            [ 0 .. 14000 ] 
+            [ -72 .. 14000 ]
             |> List.map createTimeNode 
             |> Result.ofList
             |> fun x -> printfn "Made ID"; x
             |> Result.map(List.map(fun n -> ExposureNode(YearNode n)))
             |> Result.map (fun (n: Node list) -> 
                 printfn "Adding time nodes..."
-                graph |> Graph.addNodeData n)
+                graph |> Graph.addNodeData makeUniqueKey n)
 
         let holoceneLabel = SliceLabelNode { Name = "Holocene" }
         
         // Outcomes: basic measures
         let outcomes = [
             OutcomeNode(MeasureNode Outcomes.Biodiversity.Abundance)
+            OutcomeNode(MeasureNode Outcomes.Biodiversity.DiversityBeta)
+            OutcomeNode(MeasureNode Outcomes.Biodiversity.Evenness)
             OutcomeNode(MeasureNode Outcomes.Biodiversity.PresenceAbsence)
+            OutcomeNode(MeasureNode Outcomes.Biodiversity.PresenceOnly)
+            OutcomeNode(MeasureNode Outcomes.Biodiversity.Richness)
         ]
 
         // Add basic nodes without relations.
         let graph : Result<Graph.Graph<Node,Relation>,string> =
             Graph.empty
-            |> Graph.addNodeData [
+            |> Graph.addNodeData makeUniqueKey [
                 PopulationNode (TaxonomyNode taxonRoot)
                 ExposureNode holoceneLabel
-            ] |> fst
-            |> Graph.addNodeData outcomes |> fst
-            |> addTimeIndexNodes 
-            |> Result.map fst
+            ] 
+            |> Result.lift fst
+            |> Result.bind (Graph.addNodeData makeUniqueKey outcomes) 
+            |> Result.lift fst
+            |> Result.bind addTimeIndexNodes
+            |> Result.bind (fun r -> r |> Result.map fst)
 
         // Add core relations
         let addTimeRelation year relation graph = result {

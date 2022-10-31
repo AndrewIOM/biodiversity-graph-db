@@ -12,11 +12,20 @@ module Exposure =
         /// An individual date made for a point in a discontinuous
         /// time-series, for example a stratigraphic sequence.
         type IndividualDateNode = {
-            // TODO Refine representation of individual dates.
+            [<Name("Estimated (calibrated) date")>]
+            [<Help("The date specified by the authors after any calibration steps. Unit: cal year before present.")>]
             TimeEstimate: float<OldDate.calYearBP>
+            [<Name("Uncalibrated date")>]
+            [<Help("Specify the dating method and uncalibrated date. For radiocarbon, enter the raw uncalibrated date; if this is unavailable, enter the calibrated date and calibration curve used.")>]
             Date: OldDate.OldDate
+            [<Name("Material that was dated")>]
+            [<Help("Example: leaves; ostracod shells. Note: this is a free field, but be as succinct as possible.")>]
             MaterialDated: Text.ShortText
+            [<Name("Sample depth")>]
+            [<Help("If a sediment core, select 'Some' to enter the depth in centimetres at which this date was collected. Otherwise, select 'None'.")>]
             SampleDepth: StratigraphicSequence.Depth option
+            [<Name("Was this date discarded?")>]
+            [<Help("Select 'false' unless the date was provided but not used in the formation of an age-depth model (for a sediment core).")>]
             Discarded: bool
         }
     

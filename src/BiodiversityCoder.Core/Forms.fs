@@ -7,16 +7,15 @@ type NodeViewModel =
     | NotEnteredYet
 
 type RelationViewModel =
-    | ThisIsSource of sinkKey:string * GraphStructure.ProposedRelation
-    | ThisIsSink of sourceKey:string * GraphStructure.ProposedRelation
+    | ThisIsSource of sinkKey:Graph.UniqueKey * GraphStructure.ProposedRelation
+    | ThisIsSink of sourceKey:Graph.UniqueKey * GraphStructure.ProposedRelation
 
 type FormMessage =
     | EnterNodeCreationData of string * NodeViewModel
     | RelateNodes of string * string * GraphStructure.ProposedRelation
     | AddOrUpdateNode of System.Type * validateRelations:(seq<GraphStructure.ProposedRelation> -> bool) * requiredRelations:RelationViewModel list
-    | EnterNodeRelationData of string * GraphStructure.ProposedRelation * sinkKeys:string list
-    | ChangeNodeRelationToggle of string * string
-    | AddProxiedTaxon of Population.ProxiedTaxon.ProxiedTaxonHyperEdge
+    | EnterNodeRelationData of nodeType:string * toggle:string * GraphStructure.ProposedRelation * sinkKeys:Graph.UniqueKey list
+    | ChangeNodeRelationToggle of nodeType:string * toggle:string
 
 module Create =
     
@@ -105,6 +104,7 @@ module Create =
                 | Text t -> t :> obj |> Ok
                 | Date t -> t :> obj |> Ok
                 | Time t -> t :> obj |> Ok
+                | Boolean t -> t :> obj |> Ok
         | Fields newFields ->
             // Fields - when specified not under a DU - represent an F# record ONLY.
             let recordFields = Reflection.FSharpType.GetRecordFields(objType)
@@ -176,6 +176,12 @@ module ViewGen =
         | false -> small [ _class "form-text" ] [ 
             text (field.GetCustomAttributes(typeof<HelpAttribute>, true) |> Seq.head:?> HelpAttribute).Text ]
 
+    /// Generate the name from the `Name` attribute if specified.
+    let genName (field: System.Reflection.PropertyInfo) =
+        cond (field.GetCustomAttributes(typeof<NameAttribute>, true) |> Seq.isEmpty) <| function
+        | true -> empty
+        | false -> text (field.GetCustomAttributes(typeof<NameAttribute>, true) |> Seq.head:?> NameAttribute).value
+
     /// Generate a select box for all possible cases when a DU.
     let genSelect (field: System.Reflection.PropertyInfo option) t selected dispatch =
         div [ _class "row mb-3" ] [
@@ -207,15 +213,28 @@ module ViewGen =
             | _ -> 0
         | None -> 0
 
+    let boolValue = function
+        | Some v ->
+            match v with
+            | Boolean t -> t.ToString()
+            | _ -> ""
+        | None -> ""
+
     let genStringInput existingValue maxLength dispatch =
         input [ attr.maxlength maxLength; bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch); _class "form-control" ]
 
     let genFloatInput existingValue dispatch =
         input [ bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch); _class "form-control" ]
 
+    let genTrueFalseToggle existingValue dispatch =
+        select [ _class "form-select"; bind.change.string (boolValue existingValue) (fun b -> Boolean (bool.Parse(b)) |> FieldValue |> dispatch) ] [
+            option [ attr.value "false" ] [ text "No" ]
+            option [ attr.value "true" ] [ text "Yes" ]
+        ]
+
     let genField (field:System.Reflection.PropertyInfo) existingValue dispatch =
         div [ _class "row mb-3" ] [
-            label [ attr.``for`` field.Name; _class "col-sm-2 col-form-label" ] [ text field.Name ]
+            label [ attr.``for`` field.Name; _class "col-sm-2 col-form-label" ] [ genName field ]
             div [ _class "col-sm-10" ] [
                 // TODO Make dynamic based on information held by the type, rather than having to specify all types manually.
                 (match field.PropertyType with
@@ -224,6 +243,7 @@ module ViewGen =
                 | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput existingValue 2 dispatch
                 | t when t = typeof<float> -> genFloatInput existingValue dispatch
                 | t when t = typeof<int> -> genFloatInput existingValue dispatch
+                | t when t = typeof<bool> -> genTrueFalseToggle existingValue dispatch
                 | _ -> genStringInput existingValue 9999 dispatch)
                 genHelp field
             ]
@@ -347,7 +367,7 @@ module ViewGen =
                 | None -> empty
                 | Some nodes ->
                     forEach nodes <| fun node ->
-                        option [ attr.value node.Key ] [ text node.Value ]
+                        option [ attr.value node.Key.AsString ] [ text node.Value ]
         | None -> empty
 
 
@@ -362,32 +382,32 @@ module ViewGen =
             | case, _ -> case.Name  
 
         /// Render a node relation field item.
-        let selectExistingNode<'sinkNodeType> name (rel:GraphStructure.ProposedRelation) (relationValues:Map<GraphStructure.ProposedRelation, string list>) graph dispatch =
+        let selectExistingNode<'sinkNodeType> name (rel:GraphStructure.ProposedRelation) toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
             concat [
                 label [] [ text name ]
                 cond (relationValues |> Map.tryFind rel) <| function
                 | Some v -> 
                     cond v.IsEmpty <| function
-                    | true -> select [ bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, [v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                    | false -> select [ bind.change.string v.Head (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, [v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                | None -> select [ bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, [v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                    | true -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, toggle, rel, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                    | false -> select [ _class "form-select"; bind.change.string v.Head.AsString (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, toggle, rel, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, toggle, rel, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
             ]
         
         /// Render a node relation field item.
         /// Allows entry of multiple sink nodes for this type of relation.
-        let selectExistingNodeMulti<'sinkNodeType> name (rel:GraphStructure.ProposedRelation) (relationValues:Map<GraphStructure.ProposedRelation, string list>) graph dispatch =
+        let selectExistingNodeMulti<'sinkNodeType> name (rel:GraphStructure.ProposedRelation) toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
             concat [
                 label [] [ text name ]
                 cond (relationValues |> Map.tryFind rel) <| function
                 | Some all -> concat [
                     forEach all <| fun v ->
-                        select [ bind.change.string v (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, (v :: (all |> List.except [v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                    select [ bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, (v :: (all |> List.except [v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ] ]
-                | None -> select [ bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, rel, [v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                        select [ _class "form-select"; bind.change.string v.AsString (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, toggle, rel, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                    select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, toggle, rel, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ] ]
+                | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(typeof<'sinkNodeType>.Name, toggle, rel, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
             ]
         
         /// Render a toggle for different combinations of possible relations.
-        let relationsToggle<'a> (elements: (string * (Map<GraphStructure.ProposedRelation,string list> -> Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> (FormMessage -> unit) -> Bolero.Node) list) list) (currentRelations: Map<string,string * Map<GraphStructure.ProposedRelation,list<string>>>) graph dispatch =
+        let relationsToggle<'a> (elements: (string * (string -> Map<GraphStructure.ProposedRelation,Graph.UniqueKey list> -> Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> (FormMessage -> unit) -> Bolero.Node) list) list) (currentRelations: Map<string,string * Map<GraphStructure.ProposedRelation,list<Graph.UniqueKey>>>) graph dispatch =
             cond (currentRelations |> Map.tryFind (typeof<'a>.Name)) <| function
             | Some (toggleSet, relationValues) ->
                 div [ _class "card" ] [
@@ -397,7 +417,7 @@ module ViewGen =
                                 on.click(fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
                         ]))
                     cond (elements |> Seq.tryFind(fun (e,_) -> e = toggleSet)) <| function
-                    | Some (_,n) -> n |> List.map(fun n -> n relationValues graph dispatch) |> concat
+                    | Some (_,n) -> n |> List.map(fun n -> n toggleSet relationValues graph dispatch) |> concat
                     | None -> empty
                 ]
             | None -> 
@@ -406,7 +426,7 @@ module ViewGen =
                         li [ _class "nav-item" ] [ 
                             a [ attr.href "#"; _class (if i = 0 then "nav-link active" else "nav-link") ] [ text toggle ]
                         ]))
-                    (elements.Head |> snd) |> List.map(fun n -> n Map.empty graph dispatch) |> concat
+                    (elements.Head |> snd) |> List.map(fun n -> n (fst elements.Head) Map.empty graph dispatch) |> concat
                 ]
 
         module Validation =

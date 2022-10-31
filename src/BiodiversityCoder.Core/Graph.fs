@@ -5,11 +5,33 @@ namespace BiodiversityCoder.Core
 [<RequireQualifiedAccess>]
 module Graph =
     
-    type Node<'TData> = System.Guid * 'TData
+    /// Each key is unique within its type.
+    type UniqueKey =
+        | FriendlyKey of nodeType: string * string
+        | UUID of nodeType: string * System.Guid
+
+        with 
+            member this.AsString =
+                match this with
+                | FriendlyKey (t,f) -> sprintf "%s_%s" t f
+                | UUID (t,u) -> sprintf "%s_%O" t u
+
+    let inline (|Parse|_|) (str: string): ^a option =
+        let mutable value = Unchecked.defaultof< ^a>
+        let result = (^a: (static member TryParse: string * byref< ^a> -> bool) str, &value)
+        if result then Some value
+        else None
+
+    let stringToKey (str:string) =
+        match str.Split("_").[1] with
+        | Parse(x: System.Guid) -> UUID (str.Split("_").[0], x)
+        | _ -> FriendlyKey (str.Split("_").[0], str.Split("_") |> Seq.tail |> String.concat "_")
+
+    type Node<'TData> = UniqueKey * 'TData
     
     type Connection<'TData> =
-        System.Guid * // source Id
-        System.Guid * // sink id
+        UniqueKey * // source Id
+        UniqueKey * // sink id
         int * // weight
         'TData // connection data
     
@@ -38,14 +60,14 @@ module Graph =
         | Some a -> a |> fst |> Some
         | None -> None
 
-    let addNode node graph : Graph<'nodeData,_> =
+    let addNode node graph =
         let id = fst node
         match getNode id graph with
         | None ->
             let newAdjacency = []
             let newAtom = node, newAdjacency
-            graph @ [ newAtom ] //|> Ok
-        | _ -> failwith "A node already exists with that ID"
+            graph @ [ newAtom ] |> Ok
+        | Some _ -> Error "node already exists"
 
     let replaceNodeData node graph : Result<Graph<'nodeData,_>,string> =
         let id = fst node
@@ -58,12 +80,14 @@ module Graph =
             |> List.append [ newAtom ]
             |> Ok
 
-    let addNodeData (items:'nodeData seq) (graph:Graph<'nodeData,_>) =
-        Seq.fold(fun (acc,acc2) data ->
-                    let newNode = System.Guid.NewGuid(), data
-                    addNode newNode acc, newNode :: acc2
-                     ) (graph, []) items
-
+    let addNodeData (makeKey:'nodeData -> UniqueKey) (items:'nodeData seq) (graph:Graph<'nodeData,_>) =
+        Seq.fold(fun (acc) data ->
+                    let newNode = makeKey data, data
+                    (acc 
+                     |> Result.bind(fun (acc,acc2) -> addNode newNode acc |> Result.map(fun r -> r,acc2))
+                     |> Result.lift(fun (r,acc2) -> r, newNode :: acc2))
+                     ) (Ok (graph, [])) items
+    
     let pointsTo id atom =
         atom 
         |> snd
@@ -92,7 +116,7 @@ module Graph =
 
     /// Connect two nodes together given a relationship.
     /// If an identical relation already exists, it will not be duplicated.
-    let addRelation (sourceId:System.Guid) sinkId weight connData (graph:Graph<_,_>) : Result<Graph<'nodeData,'connData>,string> =
+    let addRelation (sourceId:UniqueKey) sinkId weight connData (graph:Graph<_,_>) : Result<Graph<'nodeData,'connData>,string> =
         let source = graph |> List.tryFind(fun n -> fst (fst n) = sourceId)
         let sink = graph |> List.tryFind(fun n -> fst (fst n) = sourceId)
         if source.IsNone || sink.IsNone
@@ -223,53 +247,85 @@ module GraphStructure =
                 match o with
                 | MeasureNode n -> n.ToString()
 
-        member this.Key () = 
-            match this with
-            | PopulationNode p ->
-                match p with
-                | BioticProxyNode n -> n.ToString()
-                | TaxonomyNode n ->
-                    match n with
-                    | Taxonomy.TaxonNode.Life -> "Life"
-                    | Taxonomy.TaxonNode.Kingdom l -> sprintf "Kingdom_%s" l.Value
-                    | Taxonomy.TaxonNode.Phylum l -> sprintf "Phylum_%s" l.Value
-                    | Taxonomy.TaxonNode.Class l -> sprintf "Class_%s" l.Value
-                    | Taxonomy.TaxonNode.Order l -> sprintf "Order_%s" l.Value
-                    | Taxonomy.TaxonNode.Family l -> sprintf "Family_%s" l.Value
-                    | Taxonomy.TaxonNode.Genus l -> sprintf "Genus_%s" l.Value
-                    | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "Species_%s_%s_%s" l.Value l2.Value (System.Net.WebUtility.HtmlEncode(l3.Value))
-                    | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "Subspecies_%s_%s_%s_%s" l.Value l2.Value l3.Value (System.Net.WebUtility.HtmlEncode(l4.Value))
-                | InferenceMethodNode n -> n.ToString() // TODO
-                | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
-            | SourceNode s ->
+    let private safeString s = System.Net.WebUtility.HtmlEncode s
+    let private toLower (s:string) = s.ToLower()
+
+    /// Makes a unique key based on the node type. Some nodes have a unique identifier, while
+    /// others do not.
+    let makeUniqueKey (nodeData:Node) : Graph.UniqueKey =
+        let friendlyKey t = Graph.FriendlyKey(nodeData.NodeType() |> toLower, t)
+        let guidKey g = Graph.UUID(nodeData.NodeType() |> toLower, g)
+        match nodeData with
+        | PopulationNode p ->
+            match p with
+            | BioticProxyNode n ->
+                match n with
+                | Population.BioticProxies.BioticProxyNode.AncientDNA a -> sprintf "aDNA_%s" (safeString a.Value) |> toLower |> friendlyKey
+                | Population.BioticProxies.BioticProxyNode.DirectIdentification taxon -> sprintf "direct_%s" (safeString taxon.Value) |> toLower |> friendlyKey
+                | Population.BioticProxies.BioticProxyNode.Morphotype m -> 
+                    match m with
+                    | Population.BioticProxies.Fossil f -> sprintf "morphotype_fossil_%s" (safeString f.Value) |> toLower |> friendlyKey
+                    | Population.BioticProxies.Microfossil (group, name) ->
+                        match group with
+                        | Population.BioticProxies.MicrofossilGroup.Diatom -> sprintf "morphotype_diatom_%s" (safeString name.Value) |> toLower |> friendlyKey
+                        | Population.BioticProxies.MicrofossilGroup.Ostracod -> sprintf "morphotype_ostracod_%s" (safeString name.Value) |> toLower |> friendlyKey
+                        | Population.BioticProxies.MicrofossilGroup.PlantMacrofossil -> sprintf "morphotype_plantmacrofossil_%s" (safeString name.Value) |> toLower |> friendlyKey
+                        | Population.BioticProxies.MicrofossilGroup.Pollen -> sprintf "morphotype_pollen_%s" (safeString name.Value) |> toLower |> friendlyKey
+                        | Population.BioticProxies.MicrofossilGroup.OtherMicrofossil group -> sprintf "morphotype_customgroup_%s_%s" (safeString group.Value) (safeString name.Value) |> toLower |> friendlyKey
+            | TaxonomyNode n ->
+                match n with
+                | Taxonomy.TaxonNode.Life -> "life" |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Kingdom l -> sprintf "kingdom_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Phylum l -> sprintf "phylum_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Class l -> sprintf "class_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Order l -> sprintf "order_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Family l -> sprintf "family_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Genus l -> sprintf "genus_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "species_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString(l3.Value)) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "subspecies_%s_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString l3.Value) (System.Net.WebUtility.HtmlEncode(l4.Value)) |> toLower |> friendlyKey
+            | InferenceMethodNode n ->
+                match n with
+                | BioticProxies.InferenceMethodNode.Implicit -> "Implicit" |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas-%s" r.Value |> toLower |> friendlyKey
+            | ProxiedTaxonNode -> guidKey (System.Guid.NewGuid())
+        | SourceNode s ->
+            match s with
+            | Unscreened s
+            | Included s
+            | Excluded (s,_,_) ->
                 match s with
-                | Unscreened s
-                | Included s
-                | Excluded (s,_,_) ->
-                    match s with
-                    | Bibliographic n -> 
-                        String.concat "_" [
-                            "pub"
-                            (if n.Author.IsSome then n.Author.Value.Value.Split(",").[0] else "unknown")
-                            (if n.Title.IsSome then 
-                                (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "")
-                                else "notitle")
-                            (if n.Year.IsSome then string n.Year.Value else "noyear") ]
-                    | GreyLiterature n -> 
-                        sprintf "grey_%s_%s_%s"
-                            n.Contact.LastName.Value
-                            (n.Contact.FirstName.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
-                            (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
-                    | DarkData n -> sprintf "darkdata_%s" n.Contact.LastName.Value
-            | ExposureNode e ->
-                match e with
-                | YearNode y -> sprintf "%iybp" y.Year
-                | SliceLabelNode n -> n.Name
-                | TimelineNode n -> "notunique"
-                | DateNode n -> "notunique"
-            | OutcomeNode o ->
-                match o with
-                | MeasureNode n -> n.ToString()
+                | Bibliographic n -> 
+                    String.concat "_" [
+                        "pub"
+                        (if n.Author.IsSome then n.Author.Value.Value.Split(",").[0] else "unknown")
+                        (if n.Title.IsSome then 
+                            (n.Title.Value.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "")
+                            else "notitle")
+                        (if n.Year.IsSome then string n.Year.Value else "noyear") ] |> toLower |> friendlyKey
+                | GreyLiterature n -> 
+                    sprintf "grey_%s_%s_%s"
+                        n.Contact.LastName.Value
+                        (n.Contact.FirstName.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
+                        (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "") |> toLower |> friendlyKey
+                | DarkData n -> sprintf "darkdata_%s" (safeString n.Contact.LastName.Value) |> toLower |> friendlyKey
+        | ExposureNode e ->
+            match e with
+            | YearNode y -> sprintf "%iybp" y.Year |> toLower |> friendlyKey
+            | SliceLabelNode n -> n.Name |> toLower |> friendlyKey
+            | TimelineNode _ -> guidKey (System.Guid.NewGuid())
+            | DateNode _ -> guidKey (System.Guid.NewGuid())
+        | OutcomeNode o ->
+            match o with
+            | MeasureNode n ->
+                match n with
+                | Biodiversity.BiodiversityDimensionNode.Abundance -> "abundance" |> toLower |> friendlyKey
+                | Biodiversity.BiodiversityDimensionNode.DiversityBeta -> "beta_diversity" |> toLower |> friendlyKey
+                | Biodiversity.BiodiversityDimensionNode.Evenness -> "evenness" |> toLower |> friendlyKey
+                | Biodiversity.BiodiversityDimensionNode.PresenceOnly -> "presence" |> toLower |> friendlyKey
+                | Biodiversity.BiodiversityDimensionNode.PresenceAbsence -> "presence_absence" |> toLower |> friendlyKey
+                | Biodiversity.BiodiversityDimensionNode.Richness -> "richness" |> toLower |> friendlyKey
+                | Biodiversity.BiodiversityDimensionNode.OtherBiodiversityDimension o -> sprintf "custom_%s" (safeString o.Value) |> toLower |> friendlyKey
+
 
     /// Functions to tryFind specific node types based on their
     /// inherent indexes or other conditions.
@@ -334,7 +390,7 @@ module GraphStructure =
 
     module Relations =
 
-        type ValidRelation<'TData> = private ValidRelation of System.Guid * System.Guid * 'TData
+        type ValidRelation<'TData> = private ValidRelation of Graph.UniqueKey * Graph.UniqueKey * 'TData
         let private unwrap (ValidRelation (a,b,c)) = a,b,c
 
         /// Helpers to read F# cases
@@ -372,9 +428,11 @@ module GraphStructure =
                 | None -> false
                 
         let compare source sink rel ifTrue =
-            if Cases.compareTypes source rel 0 && Cases.compareTypes sink rel 1
-            then Ok <| ValidRelation(fst source, fst sink, ifTrue)
-            else Error "Node didn't match"
+            // TODO re-enable constraints when figured out how to unwrap to node type from Node.
+            // if Cases.compareTypes source rel 0 && Cases.compareTypes sink rel 1
+            // then Ok <| ValidRelation(fst source, fst sink, ifTrue)
+            // else Error "Node didn't match"
+            Ok <| ValidRelation(fst source, fst sink, ifTrue)
 
         /// Makes a master relation from defined relation DU types.
         /// This effectively constrains relations to a specific
@@ -430,7 +488,7 @@ module GraphStructure =
             let! existingProxy = graph |> Nodes.tryFindProxy (fun n -> n = edge.InferredFrom), "proxy doesn't exist"
             let! existingTaxon = graph |> Nodes.tryFindTaxon (fun n -> n = edge.InferredAs), "taxon doesn't exist"
             let! existingInfer = graph |> Nodes.tryFindInferenceMethod (fun n -> n = edge.InferredUsing), "infer doesn't exist"
-            let proxiedGraph = Graph.addNodeData [PopulationNode ProxiedTaxonNode] graph
+            let! proxiedGraph = Graph.addNodeData makeUniqueKey [PopulationNode ProxiedTaxonNode] graph
             let! proxiedTaxon = Graph.getAtom (snd proxiedGraph |> List.last |> fst) (fst proxiedGraph), "no intermediate node"
             // Add relations that make the intermediate node encode the hyper-edge:
             return!
@@ -439,6 +497,7 @@ module GraphStructure =
                 |> Result.bind (addRelation proxiedTaxon existingProxy (Population InferredFrom) 1)
                 |> Result.bind (addRelation proxiedTaxon existingInfer (Population InferredUsing) 1)
                 |> Result.bind (addRelation proxiedTaxon existingTaxon (Population InferredAs) 1)
+                |> Result.lift(fun g -> g, proxiedTaxon |> fst |> fst)
         }
 
         /// Get the ID of sink nodes for a specific relation.

@@ -122,3 +122,4 @@ module Population =
         | InferredFrom
         | InferredUsing
         | InferredAs
+        | MeasuredBy

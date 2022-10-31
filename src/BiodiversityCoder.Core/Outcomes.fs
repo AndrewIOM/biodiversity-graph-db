@@ -13,4 +13,5 @@ module Outcomes =
             | Evenness
             | Abundance
             | PresenceAbsence
+            | PresenceOnly
             | OtherBiodiversityDimension of Text.ShortText

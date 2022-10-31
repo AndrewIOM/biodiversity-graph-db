@@ -8,15 +8,22 @@ type SimpleValue =
     | Text of string
     | Date of DateOnly
     | Time of TimeOnly
+    | Boolean of bool
 
 [<AutoOpen>]
 module Attributes =
 
     // Allows setting properties on record fields.
     [<AttributeUsage(AttributeTargets.Property)>]
-    type Name(x: string) =
+    type NameAttribute(x: string) =
         inherit Attribute()
         member _.value = x
+
+    /// An International Resource Identifier
+    [<AttributeUsage(AttributeTargets.Property)>]
+    type IRIAttribute(x: Uri) =
+        inherit Attribute()
+        member _.Uri = x
 
     /// An attribute to display guidance text when specifying data for a 
     /// property or field.
