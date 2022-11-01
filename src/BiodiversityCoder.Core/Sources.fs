@@ -36,7 +36,8 @@ module Sources =
     }
 
     type DatabaseNode = {
-        Name: Text.Text
+        Abbreviation: Text.ShortText
+        FullName: Text.Text
         Location: System.Uri
     }
 

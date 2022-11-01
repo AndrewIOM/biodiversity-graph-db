@@ -51,6 +51,7 @@ module Population =
         type InferenceMethodNode =
             | IdentificationKeyOrAtlas of reference:Text.Text
             | Implicit
+            | ImplicitByExpert of lastName:Text.ShortText * initials:Text.ShortText
 
         type BioticProxyNode =
             | Morphotype of Morphotype
@@ -88,11 +89,11 @@ module Population =
         type ContextNode = {
             [<Help("A short description for the place.")>]
             Name: Text.ShortText
-            [<Help("Enter the location for the specific timeline in the granularity specified in the text. Select 'Site' or 'Area' to specify ")>]
+            [<Help("Enter the location for the specific timeline in the granularity specified in the text. Locations may be specified as a spatial point ('Site') or polygon ('Area'), or as political units. If using political units, attempt to ensure that the unit conforms to those in GADM https://www.gadm.org/maps.html")>]
             SamplingLocation: Geography.SamplingLocation
             [<Help("The parent material from which the 'Outcome' (biodiversity measure) has been measured. Example: pollen from a midden is subfossil.")>]
             SampleOrigin: SampleOrigin
-            [<Help("An optional short description of the characteristics of the location of the time-series. Example: lake surrounded by Salix and Betula tall shrubs.")>]
+            [<Help("An optional free-form description of the characteristics of the location of the time-series. Example: lake surrounded by Salix and Betula tall shrubs.")>]
             SampleLocationDescription: Text.Text option
         }
 
@@ -101,7 +102,7 @@ module Population =
             | PeatCore
             | Subfossil
             | LivingOrganism
-            | OtherOrigin of Text.ShortText
+            | OtherOrigin of origin:Text.ShortText
 
 
     /// Relations that go from the exposure elements as the source

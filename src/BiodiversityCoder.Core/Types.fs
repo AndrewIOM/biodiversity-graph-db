@@ -75,6 +75,11 @@ module FieldDataTypes =
         [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type LanguageCode = private LanguageCode of string
 
+        let unwrap (LanguageCode c) = c
+
+        type LanguageCode
+            with member this.Value = unwrap this
+
         let create (culture:CultureInfo) =
             culture.TwoLetterISOLanguageName |> LanguageCode
 
@@ -106,7 +111,7 @@ module FieldDataTypes =
             | _ -> points |> Polygon |> Ok 
 
         type SamplingLocation =
-            | Site      of Latitude * Longitude
+            | Site      of latitude:Latitude * longitude:Longitude
             | Area      of Polygon
             | Locality  of locality:Text.ShortText * district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
             | District  of district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
@@ -120,7 +125,7 @@ module FieldDataTypes =
         [<Measure>] type cm
 
         [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
-        type Depth = private Depth of float<cm>
+        type Depth = private Depth of depth:float<cm>
 
         let createDepth i =
             if i > 0. then Ok (Depth (i * 1.<cm>)) else Error "Depth cannot be negative"
@@ -141,10 +146,10 @@ module FieldDataTypes =
         [<Measure>] type BC
 
         type OldDate =
-        | CollectionDate of float<AD>
-        | RadiocarbonCalibrated of float<calYearBP> * calibrationCurve:Text.ShortText
-        | RadiocarbonUncalibrated of float<uncalYearBP>
-        | Lead210 of float<calYearBP>
+        | CollectionDate of yearCollected:float<AD>
+        | RadiocarbonCalibrated of calibratedDate:float<calYearBP> * calibrationCurve:Text.ShortText
+        | RadiocarbonUncalibrated of uncalibratedDate:float<uncalYearBP>
+        | Lead210 of dateCalYrBP:float<calYearBP>
 
     type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
     type Person = { FirstName: Text.ShortText; LastName: Text.ShortText }

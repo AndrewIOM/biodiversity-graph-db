@@ -25,7 +25,7 @@ module Exposure =
             [<Help("If a sediment core, select 'Some' to enter the depth in centimetres at which this date was collected. Otherwise, select 'None'.")>]
             SampleDepth: StratigraphicSequence.Depth option
             [<Name("Was this date discarded?")>]
-            [<Help("Select 'false' unless the date was provided but not used in the formation of an age-depth model (for a sediment core).")>]
+            [<Help("Select 'No' unless the date was provided but not used in the formation of an age-depth model (for a sediment core).")>]
             Discarded: bool
         }
     

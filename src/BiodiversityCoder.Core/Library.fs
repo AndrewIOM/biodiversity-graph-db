@@ -66,6 +66,7 @@ module App =
     }
     
     and SelectedSource = {
+        CompletedSections: string list
         MarkedPrimary: IsPrimarySource
         AddingNewSource: bool
         SelectedSource: Graph.Atom<GraphStructure.Node,GraphStructure.Relation>
@@ -108,6 +109,7 @@ module App =
         | MarkPrimary of IsPrimarySource
         | ToggleConnectNewOrExistingSource
         | ChangeProposedSourceLink of Graph.UniqueKey option
+        | CompleteSection of string
 
     and LookupTaxonMessage =
         | ChangeFormFields of TaxonomicLookupModel
@@ -150,7 +152,7 @@ module App =
             | Some g ->
                 match g |> Storage.atomByKey k with
                 | Some atom -> 
-                    { model with SelectedSource = Some { AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                    { model with SelectedSource = Some { CompletedSections = []; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                 | None -> { model with Error = Some <| sprintf "Could not find source with key %s [%A]" k.AsString k }, Cmd.none
         | SelectFolder ->
             model, Cmd.OfAsync.result(async {
@@ -260,7 +262,7 @@ module App =
                     | None -> model.NodeCreationRelations |> Map.add nodeType (toggleset, Map.ofList [proposed, sinkKeys])
                 { model with NodeCreationRelations = x }, Cmd.none
             | ChangeNodeRelationToggle(nodeType, toggle) ->
-                { model with NodeCreationRelations = model.NodeCreationRelations |> Map.add nodeType (toggle, Map.empty); Error = Some (sprintf "Changed toggle to %s" toggle) }, Cmd.none
+                { model with NodeCreationRelations = model.NodeCreationRelations |> Map.add nodeType (toggle, Map.empty) }, Cmd.none
         | LookupTaxon l ->
             match l with
             | ChangeFormFields f -> 
@@ -394,6 +396,10 @@ module App =
             match model.SelectedSource with
                 | Some s -> { model with SelectedSource = Some { s with MarkedPrimary = is } }, Cmd.none
                 | None -> model, Cmd.none
+        | CompleteSection section ->
+            match model.SelectedSource with
+                | Some s -> { model with SelectedSource = Some { s with CompletedSections = section :: s.CompletedSections } }, Cmd.none
+                | None -> model, Cmd.none
 
 
     let _class = attr.``class``
@@ -409,6 +415,28 @@ module App =
                 ]
             ]
         ]
+
+    let errorAlert model dispatch =
+        cond model.Error <| function
+        | Some e -> div [ _class "alert alert-danger" ] [ 
+                text e
+                button [ _class "btn"; on.click (fun _ -> DismissError |> dispatch) ] [ text "Dismiss" ] ]
+        | None -> empty
+
+    let timelineAtomDetailsView timelineAtom =
+        cond ((timelineAtom |> fst |> snd) |> GraphStructure.Nodes.asExposureNode) <| function
+        | Some exposureNode ->
+            cond exposureNode <| function
+            | Exposure.ExposureNode.TimelineNode timeline ->
+                cond timeline <| function
+                | Exposure.StudyTimeline.Continuous res
+                | Exposure.StudyTimeline.Discontinuous (res,_) ->
+                    cond res <| function
+                    | Exposure.StudyTimeline.Regular r -> textf "A continuous timeline with %A year timesteps." r
+                    | Exposure.StudyTimeline.Irregular -> textf "A continuous timeline with irregular timesteps."
+            | _ -> empty
+        | _ -> empty
+
 
     let view model dispatch =
         div [ _class "container-fluid" ] [
@@ -524,14 +552,9 @@ module App =
                             h2 [] [ text "Data Coding" ]
                             p [] [ text "This tool allows coding information from bibliographic sources directly into a graph database." ]
 
-                            cond model.Error <| function
-                            | Some e -> div [ _class "alert alert-danger" ] [ 
-                                    text e
-                                    button [ _class "btn"; on.click (fun _ -> DismissError |> dispatch) ] [ text "Dismiss" ] ]
-                            | None -> empty
-
                             cond model.Graph <| function
                             | None -> concat [
+                                errorAlert model dispatch
                                 // No graph is loaded. Connect to a graph folder.
                                 p [] [ text "To get started, please connect the data coding tool to the folder where you are storing the graph database files." ]
                                 label [] [ text "Where is the graph database stored?" ]
@@ -567,6 +590,8 @@ module App =
                                             )]
                                     ]
                                 ]
+
+                                errorAlert model dispatch
 
                                 cond model.SelectedSource <| function
                                 | None -> div [ _class "alert alert-info" ] [ text "Select a source to continue" ]
@@ -614,7 +639,7 @@ module App =
                                                                 ]
                                                             ]
                                                         ]
-                                                    | Primary //-> p [ _class "text-success" ] [ text "This source is a primary source. Continue screening below." ]
+                                                    | Primary
                                                     | Secondary ->
                                                         cond source.AddingNewSource <| function
                                                         | false -> 
@@ -660,7 +685,8 @@ module App =
                                                                     div [ _class "col-md-3" ] [
                                                                         label [] [ text "...or add a source not yet listed" ]
                                                                     ]
-                                                                    div [ _class "col-md-9" ] [
+                                                                    div [ _class "col-md-6" ] []
+                                                                    div [ _class "col-md-3" ] [
                                                                         button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
                                                                     ]
                                                                 ]
@@ -679,67 +705,96 @@ module App =
                                             div [ _class "card" ] [
                                                 div [ _class "card-header text-bg-secondary" ] [ text "Q: How are the study timeline(s) formed?" ]
                                                 div [ _class "card-body" ] [
-                                                    div [ _class "card"] [
                                                         p [] [ 
                                                             text "A study timeline is a continuous or discontinuous time-sequence over which biodiversity measures for biotic proxies are specified."
                                                             text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
                                                             text "If there are many points in a spatial area - for example individual tree-ring series - but the species are the same, you should specify a single timeline but attach a broader (e.g. regional) spatial context." ]
-                                                        div [ _class "card" ] [
-                                                            div [ _class "card-header text-bg-secondary" ] [ text "Add an additional timeline" ]
-                                                            div [ _class "card-body" ] [
-                                                                ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualTimelineNode> "Expression of time" [
-                                                                    ("Year", [
-                                                                        ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date" (Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) // TODO Uncertainty
-                                                                        ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date" (Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) ])
-                                                                    ("Qualitative", [
-                                                                        ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
-                                                                    ])
-                                                                ] model.NodeCreationRelations g (FormMessage >> dispatch)
-                                                                ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
-                                                                    (ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliest) savedRelations 
-                                                                    && ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatest) savedRelations)
-                                                                    || ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.IntersectsTime) savedRelations
-                                                                ) (model.NodeCreationViewModels |> Map.tryFind "IndividualTimelineNode") [
-                                                                    ThisIsSink ((source.SelectedSource |> fst |> fst), GraphStructure.ProposedRelation.Source(Sources.SourceRelation.HasTemporalExtent))
-                                                                ] (FormMessage >> dispatch)
-                                                            ]
-                                                        ]
-                                                        hr []
-                                                        forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timeline ->
-                                                            // TODO only allow one source node to be linked. Hide form when done and only display data.
-                                                            concat [
-                                                                h4 [] [ textf "Timeline (ID = %A)" timeline]
-                                                                hr []
-                                                                p [] [ 
-                                                                    text "Specify a single spatial context for the timeline."
-                                                                    text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
-                                                                ]
-                                                                div [ _class "card"] [
-                                                                    div [ _class "card-header text-bg-secondary" ] [ text "Required: Describe the study timeline's spatial context" ]
-                                                                    div [ _class "card-body" ] [
-                                                                        ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") [
-                                                                            ThisIsSink ((source.SelectedSource |> fst |> fst), Exposure.ExposureRelation.IsLocatedAt |> GraphStructure.ProposedRelation.Exposure)
-                                                                        ] (FormMessage >> dispatch)
-                                                                        p [] [ 
-                                                                            text "Each study timeline is defined by a dating method. Explain these here."
-                                                                        ]
-                                                                    ]
-                                                                ]
+                                                        
+                                                        // View an individual temporal extent.
+                                                        forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timelineAtom ->
+                                                            div [ _class "card" ] [
+                                                                div [ _class "card-header" ] [ text ((timelineAtom |> fst |> snd).DisplayName()) ]
+                                                                div [ _class "card-body" ] [
+                                                                    timelineAtomDetailsView timelineAtom
+                                                                    ul [] [(forEach (timelineAtom |> snd) <| fun (_,sink,_,d) ->
+                                                                        li [] [ textf "-> %s (%A)" sink.AsString d ])]
 
-                                                                label [] [ text "Associate dating techniques with this time-series" ]
-                                                                p [] [ 
-                                                                    text "Describe the individul dates used to form this individual time-series. For example, these may be radiocarbon dates for a sedimentary sequence. "
-                                                                    text "For living specimen data (e.g. tree-ring data), use the 'Collection Date' option to specify the time of sampling (that forms the origin point of the time-series - e.g. growth year zero)." ]
-                                                                ViewGen.makeNodeForm<Exposure.StudyTimeline.IndividualDateNode> (model.NodeCreationViewModels |> Map.tryFind "IndividualDateNode") [
-                                                                    ThisIsSink ((timeline |> fst |> fst), Exposure.ExposureRelation.ConstructedWithDate |> GraphStructure.ProposedRelation.Exposure)
-                                                                ] (FormMessage >> dispatch)
-                                                                p [] [ text "There are the following individual dates saved for this time-series:" ]
-                                                                forEach (timeline |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> "ConstructedWithDate" |> (fun n -> Storage.atomsByKey g n)) <| fun dateAtom ->
-                                                                    p [] [ text ((dateAtom |> fst |> snd).DisplayName()) ]
-                                                            ] // end timeline details card.
+                                                                    cond (source.CompletedSections |> Seq.contains "timeline") <| function
+                                                                    | true -> empty
+                                                                    | false ->
+                                                                        div [ _class "row" ] [
+                                                                            // Add a single spatial context or display it here.
+                                                                            cond (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.IsLocatedAt |> Seq.tryHead |> Option.map (fun k -> Storage.atomByKey k g) ) <| function
+                                                                            | Some context ->
+                                                                                p [] [ textf "%A" context ]
+                                                                            | None -> 
+                                                                                concat [
+                                                                                    div [ _class "alert alert-warning" ] [ text "You need to add a spatial context to this timeline." ]
+                                                                                    p [] [ 
+                                                                                        text "Specify a single spatial context for the timeline."
+                                                                                        text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
+                                                                                    ]
+                                                                                    div [ _class "card"] [
+                                                                                        div [ _class "card-header text-bg-warning" ] [ text "Required: Define the timeline's spatial context" ]
+                                                                                        div [ _class "card-body" ] [
+                                                                                            ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") [
+                                                                                                ThisIsSink ((timelineAtom |> fst |> fst), Exposure.ExposureRelation.IsLocatedAt |> GraphStructure.ProposedRelation.Exposure)
+                                                                                            ] (FormMessage >> dispatch)
+                                                                                        ]
+                                                                                    ]
+                                                                                ]
+
+                                                                            // Add dates and display them here.
+                                                                            cond (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.ConstructedWithDate |> Seq.tryHead) <| function
+                                                                            | Some _ -> empty
+                                                                            | None -> div [ _class "alert alert-warning" ] [ strong [] [ text "Dating method. " ]; text "You should enter at least one dating measurement here." ]
+                                                                            concat [
+                                                                                p [] [ 
+                                                                                    text "Describe the individul dates used to form this individual time-series. For example, these may be radiocarbon dates for a sedimentary sequence. "
+                                                                                    text "For living specimen data (e.g. tree-ring data), use the 'Collection Date' option to specify the time of sampling (that forms the origin point of the time-series - e.g. growth year zero)." ]
+                                                                                div [ _class "card"] [
+                                                                                    div [ _class "card-header" ] [ text "Add a date" ]
+                                                                                    div [ _class "card-body" ] [
+                                                                                        ViewGen.makeNodeForm<Exposure.StudyTimeline.IndividualDateNode> (model.NodeCreationViewModels |> Map.tryFind "IndividualDateNode") [
+                                                                                            ThisIsSink ((timelineAtom |> fst |> fst), Exposure.ExposureRelation.ConstructedWithDate |> GraphStructure.ProposedRelation.Exposure)
+                                                                                        ] (FormMessage >> dispatch)
+                                                                                    ]
+                                                                                ]
+                                                                            ]
+                                                                    ]
+
+                                                                ]
+                                                            ] // end viewing of a temporal extent.
+                                                        hr []
+                                                        cond (source.CompletedSections |> Seq.contains "timeline") <| function
+                                                        | true -> div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the timelines section." ]
+                                                        | false -> concat [
+                                                            // Add another temporal extent.
+                                                            div [ _class "card" ] [
+                                                                div [ _class "card-header" ] [ text "Add an additional timeline" ]
+                                                                div [ _class "card-body" ] [
+                                                                    ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualTimelineNode> "Expression of time" [
+                                                                        ("Year", [
+                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date" (Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) // TODO Uncertainty
+                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date" (Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) ])
+                                                                        ("Qualitative", [
+                                                                            ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
+                                                                        ])
+                                                                    ] model.NodeCreationRelations g (FormMessage >> dispatch)
+                                                                    ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
+                                                                        (ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliest) savedRelations 
+                                                                        && ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatest) savedRelations)
+                                                                        || ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.IntersectsTime) savedRelations
+                                                                    ) (model.NodeCreationViewModels |> Map.tryFind "IndividualTimelineNode") [
+                                                                        ThisIsSink ((source.SelectedSource |> fst |> fst), GraphStructure.ProposedRelation.Source(Sources.SourceRelation.HasTemporalExtent))
+                                                                    ] (FormMessage >> dispatch)
+                                                                ]
+                                                            ]
+                                                            hr []
+                                                            button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "timeline" |> dispatch) ] [ text "I've finished coding timelines" ]
+                                                        ]
                                                     ]
-                                                ]
-                                            ] // end timelines card.                                                
+                                            ] // end timelines card.
 
                                             div [ _class "card" ] [
                                                 div [ _class "card-header text-bg-secondary" ] [ text "Q: Which biodiversity outcomes are associated with the timelines in this source?" ]
@@ -755,66 +810,67 @@ module App =
                                                     ]
 
                                                     // 3. For each study timeline, add proxied taxa.
-                                                    forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timelineNode ->
+                                                    forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timelineAtom ->
                                                         // Display existing and add new proxied taxa
                                                         // Proxied taxa are related to an outcome too.
-                                                        cond (timelineNode |> fst |> snd) <| function
-                                                        | GraphStructure.Node.ExposureNode e ->
-                                                            cond e <| function
-                                                            | Exposure.TimelineNode (timeline: Exposure.StudyTimeline.IndividualTimelineNode) ->
-                                                                concat [
-                                                                    div [] [
-                                                                        p [] [ textf "Timeline" ]
-                                                                        table [ _class "table" ] [
-                                                                            thead [] [
-                                                                                tr [] [
-                                                                                    th [ attr.scope "column" ] [ text "Biotic Proxy" ]
-                                                                                    th [ attr.scope "column" ] [ text "Inference Method" ]
-                                                                                    th [ attr.scope "column" ] [ text "Botanical Taxon / Taxa" ]
-                                                                                    th [ attr.scope "column" ] [ text "Measured by" ]
-                                                                                    th [ attr.scope "column" ] [ text "Actions" ]
-                                                                                ]
-                                                                            ]
-                                                                            tbody [] [
-                                                                                // Add a new proxied taxon and outcome measure.
-                                                                                tr [] [        
-                                                                                    cond (source.AddBioticHyperedge |> Map.tryFind (timelineNode |> fst |> fst)) <| function
-                                                                                    | Some (proxy,infer,taxon,outcome) -> concat [
-                                                                                        td [] [ select [ _class "form-select"; bind.change.string (if proxy.IsSome then proxy.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineNode |> fst |> fst),Some (Graph.stringToKey s),infer,taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
-                                                                                        td [] [ select [ _class "form-select"; bind.change.string (if infer.IsSome then infer.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineNode |> fst |> fst),proxy,Some (Graph.stringToKey s),taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                                        td [] [ select [ _class "form-select"; bind.change.string (if taxon.IsSome then taxon.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineNode |> fst |> fst),proxy,infer,Some (Graph.stringToKey s),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
-                                                                                        td [] [ select [ _class "form-select"; bind.change.string (if outcome.IsSome then outcome.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineNode |> fst |> fst),proxy,infer,taxon,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
-                                                                                    | None -> concat [
-                                                                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineNode |> fst |> fst),Some (Graph.stringToKey s),None,None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
-                                                                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineNode |> fst |> fst),None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineNode |> fst |> fst),None,None,Some (Graph.stringToKey s),None) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
-                                                                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineNode |> fst |> fst),None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
-                                                                                    td [] [
-                                                                                        button [ _class "btn btn-primary"; on.click (fun _ -> SubmitProxiedTaxon (timelineNode |> fst |> fst) |> dispatch) ] [ text "Save" ]
-                                                                                    ]
-                                                                                ]
-                                                                                forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.HasProxyInfo |> Storage.atomsByKey g ) <| fun proxiedTaxa -> concat [
-                                                                                    cond (proxiedTaxa |> fst |> snd) <| function
-                                                                                    | GraphStructure.Node.PopulationNode e ->
-                                                                                        cond e <| function
-                                                                                        | GraphStructure.ProxiedTaxonNode ->
-                                                                                            tr [] [
-                                                                                                td [] [ text "A proxied taxon entry..." ]
-                                                                                                td [] [ text "..." ]
-                                                                                                td [] [ text "..." ]
-                                                                                                td [] [ text "..." ]
-                                                                                                td [] []
-                                                                                            ]
-                                                                                        | _ -> empty
-                                                                                    | _ -> empty
-                                                                                ]
-                                                                            ]
+                                                        concat [
+                                                            h4 [] [ text ((timelineAtom |> fst |> snd).DisplayName())]
+                                                            hr []
+                                                            timelineAtomDetailsView timelineAtom
+                                                            div [] [
+                                                                table [ _class "table" ] [
+                                                                    thead [] [
+                                                                        tr [] [
+                                                                            th [ attr.scope "column" ] [ text "Biotic Proxy" ]
+                                                                            th [ attr.scope "column" ] [ text "Inference Method" ]
+                                                                            th [ attr.scope "column" ] [ text "Botanical Taxon / Taxa" ]
+                                                                            th [ attr.scope "column" ] [ text "Measured by" ]
+                                                                            th [ attr.scope "column" ] [ text "Actions" ]
                                                                         ]
                                                                     ]
-                                                                ]
-                                                            | _ -> empty
-                                                        | _ -> empty
-
+                                                                    tbody [] [
+                                                                        // Add a new proxied taxon and outcome measure.
+                                                                        tr [] [        
+                                                                            cond (source.AddBioticHyperedge |> Map.tryFind (timelineAtom |> fst |> fst)) <| function
+                                                                            | Some (proxy,infer,taxon,outcome) -> concat [
+                                                                                td [] [ select [ _class "form-select"; bind.change.string (if proxy.IsSome then proxy.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),infer,taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                                                td [] [ select [ _class "form-select"; bind.change.string (if infer.IsSome then infer.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,Some (Graph.stringToKey s),taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                                                td [] [ select [ _class "form-select"; bind.change.string (if taxon.IsSome then taxon.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (Graph.stringToKey s),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                                                td [] [ select [ _class "form-select"; bind.change.string (if outcome.IsSome then outcome.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,taxon,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
+                                                                            | None -> concat [
+                                                                                td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),None,None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                                                td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                                                td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,Some (Graph.stringToKey s),None) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                                                td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
+                                                                            td [] [
+                                                                                button [ _class "btn btn-primary"; on.click (fun _ -> SubmitProxiedTaxon (timelineAtom |> fst |> fst) |> dispatch) ] [ text "Save" ]
+                                                                            ]
+                                                                        ]
+                                                                        forEach (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.HasProxyInfo |> Storage.atomsByKey g ) <| fun proxiedTaxonEdge -> concat [
+                                                                            cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredFrom |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                            | Some proxyName ->
+                                                                                cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredUsing |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                                | Some methodName ->
+                                                                                    cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredAs |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                                    | Some taxonName ->
+                                                                                        cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.MeasuredBy |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                                        | Some outcome ->
+                                                                                        tr [] [
+                                                                                            td [] [ text proxyName ]
+                                                                                            td [] [ text methodName ]
+                                                                                            td [] [ text taxonName ]
+                                                                                            td [] [ text outcome ]
+                                                                                            td [] []
+                                                                                        ]
+                                                                                        | None -> empty
+                                                                                    | None -> empty
+                                                                                | None -> empty
+                                                                            | None -> empty
+                                                                        ]
+                                                                    ]
+                                                                ] // end proxied taxa table
+                                                            ]
+                                                        ]
                                                 ]
                                             ] // end outcomes card
 

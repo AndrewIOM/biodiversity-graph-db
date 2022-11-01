@@ -228,8 +228,8 @@ module ViewGen =
 
     let genTrueFalseToggle existingValue dispatch =
         select [ _class "form-select"; bind.change.string (boolValue existingValue) (fun b -> Boolean (bool.Parse(b)) |> FieldValue |> dispatch) ] [
-            option [ attr.value "false" ] [ text "No" ]
-            option [ attr.value "true" ] [ text "Yes" ]
+            option [ attr.value "False" ] [ text "No" ]
+            option [ attr.value "True" ] [ text "Yes" ]
         ]
 
     let genField (field:System.Reflection.PropertyInfo) existingValue dispatch =
@@ -416,14 +416,14 @@ module ViewGen =
                     | Some (toggleSet, relationValues) -> concat [
                                 cond (elements.Length > 1) <| function
                                 | true ->
-                                    div [ _class "row" ] [
-                                        div [ _class "col-md-3" ] [ label [] [text name ] ]
-                                        div [ _class "col-md-9" ] [
-                                            ul [ _class "nav nav-pills" ] (elements |> List.map(fun (toggle,_) ->
-                                                li [ _class "nav-item" ] [ 
-                                                    a [ attr.href "#"; _class (if toggle = toggleSet then "nav-link active" else "nav-link")
-                                                        on.click(fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                                ]))
+                                    div [ _class "row mb-3" ] [
+                                        div [ _class "col-sm-2 col-form-label" ] [ label [] [text name ] ]
+                                        div [ _class "col-sm-10" ] [
+                                            div [ _class "btn-group" ] (elements |> List.map(fun (toggle,_) ->
+                                                cond (toggle = toggleSet) <| function
+                                                | true -> button [ _class "btn btn-outline-primary active"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                                                | false -> button [ _class "btn btn-outline-primary";  on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                                            ))
                                         ]
                                     ]
                                 | false -> empty
@@ -436,12 +436,13 @@ module ViewGen =
                             cond (elements.Length > 1) <| function
                             | true ->
                                 div [ _class "row" ] [
-                                        div [ _class "col-md-3" ] [ label [] [text name ] ]
-                                        div [ _class "col-md-9" ] [
-                                            ul [ _class "nav nav-pills" ] (elements |> List.mapi(fun i (toggle,_) ->
-                                                li [ _class "nav-item" ] [ 
-                                                    a [ attr.href "#"; _class (if i = 0 then "nav-link active" else "nav-link") ] [ text toggle ]
-                                                ]))
+                                        div [ _class "col-sm-2 col-form-label" ] [ label [] [text name ] ]
+                                        div [ _class "col-sm-10" ] [
+                                            div [ _class "btn-group"  ] (elements |> List.mapi(fun i (toggle,_) ->
+                                                    cond (i = 0) <| function
+                                                | true -> button [ _class "btn btn-outline-primary active"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                                                | false -> button [ _class "btn btn-outline-primary";  on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                                            ))
                                         ]
                                 ]
                             | false -> empty

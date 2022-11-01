@@ -151,6 +151,8 @@ module GraphStructure =
         | TaxonomyNode of Taxonomy.TaxonNode
         | BioticProxyNode of BioticProxies.BioticProxyNode
         | InferenceMethodNode of BioticProxies.InferenceMethodNode
+        | ContextNode of Context.ContextNode
+        | VernacularTaxonLabelNode of Taxonomy.VernacularTaxonLabelNode
         | ProxiedTaxonNode // Intermediate node that represents a hyperedge
 
     type OutcomeNode =
@@ -199,6 +201,8 @@ module GraphStructure =
                 | TaxonomyNode n -> "TaxonNode"
                 | InferenceMethodNode n -> "InferenceMethodNode"
                 | ProxiedTaxonNode -> "ProxiedTaxonNode"
+                | ContextNode _ -> "ContextNode"
+                | VernacularTaxonLabelNode _ -> "VernacularTaxonLabelNode"
             | SourceNode s ->
                 match s with
                 | Unscreened s2 -> "SourceNode"
@@ -220,10 +224,39 @@ module GraphStructure =
             match this with
             | PopulationNode p ->
                 match p with
-                | BioticProxyNode n -> n.ToString() // TODO
-                | TaxonomyNode n -> n.ToString() // TODO
-                | InferenceMethodNode n -> n.ToString() // TODO
+                | BioticProxyNode n ->
+                    match n with
+                    | Population.BioticProxies.BioticProxyNode.AncientDNA a -> sprintf "aDNA: %s" a.Value
+                    | Population.BioticProxies.BioticProxyNode.DirectIdentification taxon -> sprintf "Direct ID: %s" taxon.Value
+                    | Population.BioticProxies.BioticProxyNode.Morphotype m -> 
+                        match m with
+                        | Population.BioticProxies.Fossil f -> sprintf "Fossil: %s" f.Value
+                        | Population.BioticProxies.Microfossil (group, name) ->
+                            match group with
+                            | Population.BioticProxies.MicrofossilGroup.Diatom -> sprintf "Morphotype: Diatom - %s" name.Value
+                            | Population.BioticProxies.MicrofossilGroup.Ostracod -> sprintf "Morphotype: Ostracod - %s" name.Value
+                            | Population.BioticProxies.MicrofossilGroup.PlantMacrofossil -> sprintf "Morphotype: Plant Macrofossil - %s" name.Value
+                            | Population.BioticProxies.MicrofossilGroup.Pollen -> sprintf "Morphotype: Pollen - %s" name.Value
+                            | Population.BioticProxies.MicrofossilGroup.OtherMicrofossil group -> sprintf "Morphotype: %s - %s" group.Value name.Value
+                | TaxonomyNode n ->
+                    match n with
+                    | Taxonomy.TaxonNode.Life -> "Life"
+                    | Taxonomy.TaxonNode.Kingdom l -> sprintf "%s [Kingdom]" l.Value
+                    | Taxonomy.TaxonNode.Phylum l -> sprintf "%s [Phylum]" l.Value
+                    | Taxonomy.TaxonNode.Class l -> sprintf "%s [Class]" l.Value
+                    | Taxonomy.TaxonNode.Order l -> sprintf "%s [Order]" l.Value
+                    | Taxonomy.TaxonNode.Family l -> sprintf "%s [Family]" l.Value
+                    | Taxonomy.TaxonNode.Genus l -> sprintf "%s [Genus]" l.Value
+                    | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "%s %s %s [Species]" l.Value l2.Value l3.Value
+                    | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "%s %s subsp. %s %s [Subspecies]" l.Value l2.Value l3.Value l4.Value
+                | InferenceMethodNode n ->
+                    match n with
+                    | BioticProxies.InferenceMethodNode.Implicit -> "Implicit"
+                    | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "Explicit: Atlas or Key - %s" r.Value
+                    | BioticProxies.InferenceMethodNode.ImplicitByExpert (lastName, initials) -> sprintf "Explicit: Atlas or Key - %s, %s" lastName.Value initials.Value
                 | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
+                | ContextNode n -> sprintf "%s: %s" (n.SamplingLocation.GetType().Name) n.Name.Value
+                | VernacularTaxonLabelNode(_) -> failwith "Not Implemented"
             | SourceNode s ->
                 match s with
                 | Unscreened s
@@ -237,6 +270,7 @@ module GraphStructure =
                             (if n.Title.IsSome then n.Title.Value.Value else "?")
                     | GreyLiterature n -> sprintf "Grey literature source: %s" n.Title.Value
                     | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
+                    | Database n -> sprintf "Database: %s" n.FullName.Value
             | ExposureNode e ->
                 match e with
                 | YearNode y -> sprintf "%i cal yr BP" y.Year
@@ -286,8 +320,11 @@ module GraphStructure =
             | InferenceMethodNode n ->
                 match n with
                 | BioticProxies.InferenceMethodNode.Implicit -> "Implicit" |> toLower |> friendlyKey
-                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas-%s" r.Value |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" r.Value |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.ImplicitByExpert (l,i) -> sprintf "expert_%s_%s" (safeString l.Value) (safeString i.Value) |> toLower |> friendlyKey
             | ProxiedTaxonNode -> guidKey (System.Guid.NewGuid())
+            | ContextNode _ -> guidKey (System.Guid.NewGuid())
+            | VernacularTaxonLabelNode v -> sprintf "%s_%s" (safeString v.Language.Value) (safeString v.Label.Value) |> toLower |> friendlyKey
         | SourceNode s ->
             match s with
             | Unscreened s
@@ -308,6 +345,7 @@ module GraphStructure =
                         (n.Contact.FirstName.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
                         (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "") |> toLower |> friendlyKey
                 | DarkData n -> sprintf "darkdata_%s" (safeString n.Contact.LastName.Value) |> toLower |> friendlyKey
+                | Database n -> sprintf "database_%s" (safeString n.Abbreviation.Value) |> toLower |> friendlyKey
         | ExposureNode e ->
             match e with
             | YearNode y -> sprintf "%iybp" y.Year |> toLower |> friendlyKey
@@ -376,8 +414,8 @@ module GraphStructure =
                 | (t: System.Type) when t = typeof<BioticProxies.BioticProxyNode> -> n :?> BioticProxies.BioticProxyNode |> BioticProxyNode |> PopulationNode |> Ok
                 | (t: System.Type) when t = typeof<Taxonomy.TaxonNode> -> n :?> Taxonomy.TaxonNode |> TaxonomyNode |> PopulationNode |> Ok
                 | (t: System.Type) when t = typeof<BioticProxies.InferenceMethodNode> -> n :?> BioticProxies.InferenceMethodNode |> InferenceMethodNode |> PopulationNode |> Ok
-                // | (t: System.Type) when t = typeof<Population.Taxonomy.VernacularTaxonLabelNode> -> n :?> Population.Taxonomy.VernacularTaxonLabelNode |> TaxonomyNode |> PopulationNode
-                // | t when t = typeof<Population.Context.ContextNode> -> n :?> Population.Context.ContextNode |> 
+                | (t: System.Type) when t = typeof<Population.Taxonomy.VernacularTaxonLabelNode> -> n :?> Population.Taxonomy.VernacularTaxonLabelNode |> VernacularTaxonLabelNode |> PopulationNode |> Ok
+                | t when t = typeof<Population.Context.ContextNode> -> n :?> Population.Context.ContextNode |> ContextNode |> PopulationNode |> Ok
                 // Exposure node:
                 | (t: System.Type) when t = typeof<TemporalIndex.CalYearNode> -> n :?> TemporalIndex.CalYearNode |> YearNode |> ExposureNode |> Ok
                 | (t: System.Type) when t = typeof<TemporalIndex.QualitativeLabelNode> -> n :?> TemporalIndex.QualitativeLabelNode |> SliceLabelNode |> ExposureNode |> Ok
@@ -471,6 +509,7 @@ module GraphStructure =
                 match rel with
                 | HasTemporalExtent -> compare source sink rel (Relation.Source HasTemporalExtent)
                 | UsesPrimarySource -> compare source sink rel (Relation.Source UsesPrimarySource)
+                | UsedDatabase(accessDate) -> compare source sink rel (Relation.Source <| UsedDatabase accessDate)
 
 
         /// Add a node relation to the graph, validating that the relation

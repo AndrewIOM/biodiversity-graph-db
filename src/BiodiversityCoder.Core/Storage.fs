@@ -168,6 +168,10 @@ module Storage =
         (unwrap graph).Graph |> Seq.tryFind(fun (n,_) -> fst n = key)
 
     /// Fetch a node by it's key
+    let atomFriendlyNameByKey<'c> key (graph:FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) =
+        (unwrap graph).NodesByType |> Map.tryFind (typeof<'c>).Name |> Option.bind (Map.tryFind key)
+
+    /// Fetch a node by it's key
     let atomsByKey<'c> (graph:FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) keys =
         keys
         |> Seq.choose(fun guid ->
