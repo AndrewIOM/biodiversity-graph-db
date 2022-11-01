@@ -66,11 +66,16 @@ module App =
     }
     
     and SelectedSource = {
+        MarkedPrimary: IsPrimarySource
+        AddingNewSource: bool
         SelectedSource: Graph.Atom<GraphStructure.Node,GraphStructure.Relation>
-        LinkToSecondarySource: string option
+        ProposedLink: Graph.UniqueKey option
+        LinksToPrimarySources: (Graph.UniqueKey * string) option
         Screening: NodeViewModel
         AddBioticHyperedge: Map<Graph.UniqueKey, Graph.UniqueKey option * Graph.UniqueKey option * Graph.UniqueKey option * Graph.UniqueKey option>
     }
+
+    and IsPrimarySource = Primary | Secondary | Unknown
     
     and EligbilityCriteria =
         | Include
@@ -100,6 +105,9 @@ module App =
         | LookupTaxon of LookupTaxonMessage
         | ChangeProxiedTaxonVm of timeline:Graph.UniqueKey * proxy:Graph.UniqueKey option * inference:Graph.UniqueKey option * taxon:Graph.UniqueKey option * measure:Graph.UniqueKey option
         | SubmitProxiedTaxon of timeline:Graph.UniqueKey
+        | MarkPrimary of IsPrimarySource
+        | ToggleConnectNewOrExistingSource
+        | ChangeProposedSourceLink of Graph.UniqueKey option
 
     and LookupTaxonMessage =
         | ChangeFormFields of TaxonomicLookupModel
@@ -142,7 +150,7 @@ module App =
             | Some g ->
                 match g |> Storage.atomByKey k with
                 | Some atom -> 
-                    { model with SelectedSource = Some { AddBioticHyperedge = Map.empty; SelectedSource = atom; LinkToSecondarySource = None; Screening = NotEnteredYet } }, Cmd.none
+                    { model with SelectedSource = Some { AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                 | None -> { model with Error = Some <| sprintf "Could not find source with key %s [%A]" k.AsString k }, Cmd.none
         | SelectFolder ->
             model, Cmd.OfAsync.result(async {
@@ -155,7 +163,19 @@ module App =
             | Error e -> { model with Error = Some e }, Cmd.none
         | FormMessage m ->
             match m with
-            | RelateNodes(_, _, _) -> failwith "Not Implemented"
+            | RelateNodes(source, sink, rel) -> 
+                match model.Graph with
+                | Some g -> 
+                    result {
+                        let! sourceNode = g |> Storage.atomByKey source |> Result.ofOption "Could not find source node"
+                        let! sinkNode = g |> Storage.atomByKey sink |> Result.ofOption "Could not find sink node"
+                        let! updatedGraph = g |> Storage.addRelation sourceNode sinkNode rel
+                        return updatedGraph
+                    } |> Result.lower
+                        (fun g -> { model with Graph = Some g }, Cmd.none )
+                            (fun e -> { model with Error = Some e }, Cmd.none)
+
+                | None -> { model with Error = Some "No graph loaded" }, Cmd.none
             | EnterNodeCreationData(formId, vm) -> 
                 match formId with
                 | "EligbilityCriteria" ->
@@ -193,8 +213,8 @@ module App =
                             |> Result.bind updateNode
                             |> Result.lift GraphStructure.Node.SourceNode
                             |> Result.bind (fun n -> Storage.updateNode g (source.SelectedSource |> fst |> fst, n))
-                            |> Result.lift (fun g -> { model with Graph = Some g })
-                            |> Result.lower (fun r -> r, Cmd.none) (fun e -> { model with Error = Some e }, Cmd.none)
+                            |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                            |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
                         | None -> { model with Error = Some "Cannot screen source as graph is not loaded." }, Cmd.none
                     | None -> model, Cmd.none
                 else
@@ -226,8 +246,11 @@ module App =
                                             | ThisIsSink (sourceKey, proposed) -> Storage.addRelationByKey fbg sourceKey ((addedNodes.Head |> fst |> fst)) proposed
                                             | ThisIsSource (sinkKey, proposed) -> Storage.addRelationByKey fbg ((addedNodes.Head |> fst |> fst)) sinkKey proposed
                                         )) (Ok graph) proposedRels)
-                                |> Result.lift (fun g -> { model with Graph = Some g })
-                                |> Result.lower (fun r -> r, Cmd.none) (fun e -> { model with Error = Some e }, Cmd.none)
+                                |> Result.lift (fun g -> { model with Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name })
+                                |> Result.lower (fun m -> 
+                                    match model.SelectedSource with
+                                    | Some s -> m, Cmd.ofMsg (SelectSource (s.SelectedSource |> fst |> fst))
+                                    | None -> m, Cmd.none) (fun e -> { model with Error = Some e }, Cmd.none)
                             | None -> { model with Error = Some "Cannot make node as graph is not loaded." }, Cmd.none
                     | None -> { model with Error = Some (sprintf "Could not find type of %s" nodeType.Name) }, Cmd.none
             | EnterNodeRelationData(nodeType, toggleset, proposed, sinkKeys) -> 
@@ -237,7 +260,7 @@ module App =
                     | None -> model.NodeCreationRelations |> Map.add nodeType (toggleset, Map.ofList [proposed, sinkKeys])
                 { model with NodeCreationRelations = x }, Cmd.none
             | ChangeNodeRelationToggle(nodeType, toggle) ->
-                { model with NodeCreationRelations = model.NodeCreationRelations |> Map.add nodeType (toggle, Map.empty) }, Cmd.none
+                { model with NodeCreationRelations = model.NodeCreationRelations |> Map.add nodeType (toggle, Map.empty); Error = Some (sprintf "Changed toggle to %s" toggle) }, Cmd.none
         | LookupTaxon l ->
             match l with
             | ChangeFormFields f -> 
@@ -354,11 +377,23 @@ module App =
                             return updatedGraphWithRelations
                         }
                         match saveEdge () with
-                        | Ok saved -> { model with Graph = Some saved; Error = Some "Ran OK! ??" }, Cmd.none
+                        | Ok saved -> { model with Graph = Some saved }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst))
                         | Error e -> { model with Error = Some e }, Cmd.none
                     | None -> { model with Error = Some "No hyper edge details found" }, Cmd.none
                 | None -> { model with Error = Some "No source loaded" }, Cmd.none
             | None -> { model with Error = Some "No graph loaded" }, Cmd.none
+        | ToggleConnectNewOrExistingSource ->
+            match model.SelectedSource with
+            | Some s -> { model with SelectedSource = Some { s with AddingNewSource = not s.AddingNewSource } }, Cmd.none
+            | None -> model, Cmd.none
+        | ChangeProposedSourceLink k ->
+            match model.SelectedSource with
+            | Some s -> { model with SelectedSource = Some { s with ProposedLink = k } }, Cmd.none
+            | None -> model, Cmd.none
+        | MarkPrimary is ->
+            match model.SelectedSource with
+                | Some s -> { model with SelectedSource = Some { s with MarkedPrimary = is } }, Cmd.none
+                | None -> model, Cmd.none
 
 
     let _class = attr.``class``
@@ -383,7 +418,7 @@ module App =
                 sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources ] dispatch
 
                 // 2. Page view
-                div [ _class "col py-3" ] [
+                div [ _class "col" ] [
                     cond model.Page <| function
                         | Page.Population -> concat [
                                 h2 [] [ text "Population" ]
@@ -400,7 +435,7 @@ module App =
                                 | None -> empty
 
                                 // Allow linking to taxonomic backbone here.
-                                div [ _class "card text-bg-secondary" ] [
+                                div [ _class "card" ] [
                                     div [ _class "card-header" ] [ text "Add a plant taxonomic name" ]
                                     div [ _class "card-body" ] [
                                         div [ _class "row g-3" ] [
@@ -475,7 +510,7 @@ module App =
                                 button [ _class "btn btn-primary"; on.click (fun _ -> ImportColandr |> dispatch) ] [ text "Import from Colandr (title-abstract screening)" ]
 
                                 div [ _class "card" ] [
-                                    div [ _class "card-header" ] [ text "Import new sources" ]
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Import new sources" ]
                                     text "Enter a bibtex-format file below."
                                     textarea [ bind.input.string model.Import (fun s -> ChangeImportText s |> dispatch) ] []
                                     button [ on.click (fun _ -> ImportBibtex |> dispatch ) ] [ text "Import" ]
@@ -504,7 +539,7 @@ module App =
                             | Some g -> concat [
                                 
                                 div [ _class "card text-bg-secondary" ] [
-                                    div [ _class "card-header" ] [ text "Source Details" ]
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Source Details" ]
                                     div [ _class "card-body" ] [
                                         text "Selected source:"
                                         cond model.SelectedSource <| function
@@ -534,7 +569,7 @@ module App =
                                 ]
 
                                 cond model.SelectedSource <| function
-                                | None -> text "Select a source to continue"
+                                | None -> div [ _class "alert alert-info" ] [ text "Select a source to continue" ]
                                 | Some source -> concat [
 
                                     // Allow coding if included, or show exclusion reasons / options.
@@ -545,7 +580,7 @@ module App =
                                             concat [
                                                 // Full-text screening options.
                                                 div [ _class "card" ] [
-                                                    div [ _class "card-header" ] [ text "Q: Is the source relevant?" ]
+                                                    div [ _class "card-header text-bg-secondary" ] [ text "Q: Is the source relevant?" ]
                                                     div [ _class "card-body" ] [
                                                         p [] [ text "Please apply the eligbility criteria against the full-text PDF of this source and determine if the source should be included or excluded." ]
                                                         ViewGen.makeNodeForm'<EligbilityCriteria> (Some source.Screening) "Screen" (FormMessage >> dispatch) (fun _ -> true) []
@@ -559,47 +594,100 @@ module App =
                                                 textf "The reason stated was: %s" (reason.ToString())
                                                 text notes.Value ]
                                         | Sources.SourceNode.Included s -> concat [
-                                            p [] [ text "This source has been included at full-text level. Please code information as stated below." ]
+                                            div [ _class "alert alert-success" ] [ text "This source has been included at full-text level. Please code information as stated below." ]
                                             div [ _class "card" ] [
-                                                div [ _class "card-header" ] [ text "Q: Is it a primary or secondary source?" ]
+                                                div [ _class "card-header text-bg-secondary" ] [ text "Q: Is it a primary or secondary source?" ]
                                                 div [ _class "card-body" ] [
                                                     p [] [ 
                                                         text "A source may be 'secondary' if it does not contain any new information, but references information in other publications."
                                                         text "You can link this source to the primary sources by selecting an existing source, or adding a new one. Please check that the source does not already exist before creating a new one." ]
-                                                    select [ _class "form-select"; bind.change.string (if model.SelectedSource.IsSome then (model.SelectedSource.Value.SelectedSource |> fst |> fst).AsString else "") (fun k -> SelectSource (Graph.stringToKey k) |> dispatch) ] [(
-                                                        cond (g.Nodes<Sources.SourceNode>()) <| function
-                                                        | Some sources ->
-                                                            sources
-                                                            |> Seq.map(fun k ->
-                                                                option [ attr.value k.Key.AsString ] [ text k.Value ])
-                                                            |> Seq.toList
-                                                            |> concat
-                                                        | None -> empty
-                                                    )]
-                                                    button [ _class "btn btn-primary" ] [ text "Link to this primary source." ]
-                                                    p [] [ text "You may alternatively specify a source we do not already have listed using the below fields. This will be linked to the selected source." ]
-                                                    div [ _class "card" ] [
-                                                        div [ _class "card-header" ] [ text "Add a new source" ]
-                                                        text "You may need to reference another source from this source that isn't already in our included sources."
-                                                        ViewGen.makeNodeForm<Sources.SourceNode> (model.NodeCreationViewModels |> Map.tryFind "SourceNode") [
-                                                            ThisIsSink ((source.SelectedSource |> fst |> fst), GraphStructure.ProposedRelation.Source(Sources.SourceRelation.UsesPrimarySource))
-                                                        ] (FormMessage >> dispatch)
+                                                    cond source.MarkedPrimary <| function
+                                                    | Unknown ->
+                                                        concat [
+                                                            div [ _class "row g-3" ] [
+                                                                div [ _class "col-md-3" ] [
+                                                                    label [] [ text "Is this a primary source?" ]
+                                                                ]
+                                                                div [ _class "col-md-9" ] [
+                                                                    button [ _class "btn btn-secondary"; on.click(fun _ -> MarkPrimary Primary |> dispatch) ] [ text "Primary source" ]
+                                                                    button [ _class "btn btn-secondary"; on.click(fun _ -> MarkPrimary Secondary |> dispatch) ] [ text "Secondary source" ]
+                                                                ]
+                                                            ]
+                                                        ]
+                                                    | Primary //-> p [ _class "text-success" ] [ text "This source is a primary source. Continue screening below." ]
+                                                    | Secondary ->
+                                                        cond source.AddingNewSource <| function
+                                                        | false -> 
+                                                            concat [
+                                                                div [ _class "row g-3" ] [
+                                                                    div [ _class "col-md-3" ] [
+                                                                        label [] [ text "Is this a primary source?" ]
+                                                                    ]
+                                                                    div [ _class "col-md-9" ] [ 
+                                                                            cond source.MarkedPrimary <| function
+                                                                            | Primary -> text "Yes. This source is a primary source, but may also be linked to other sources."
+                                                                            | Secondary -> text "No. This is only a secondary source."
+                                                                            | _ -> empty
+                                                                        ]
+                                                                ]
+                                                                div [ _class "row g-3" ] [
+                                                                    div [ _class "col-md-3" ] [
+                                                                        label [] [ text "Linked sources" ]
+                                                                    ]
+                                                                    div [ _class "col-md-6" ] [
+                                                                        forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.UsesPrimarySource |> Storage.atomsByKey g ) <| fun linkedSource ->
+                                                                            p [] [ textf "%A" (linkedSource |> fst |> snd) ]
+                                                                    ]
+                                                                ]
+                                                                div [ _class "row g-3" ] [
+                                                                    div [ _class "col-md-3" ] [
+                                                                        label [] [ text "Link to another primary source" ]
+                                                                    ]
+                                                                    div [ _class "col-md-6" ] [
+                                                                        select [ _class "form-select"; bind.change.string (if source.ProposedLink.IsSome then source.ProposedLink.Value.AsString else "") 
+                                                                            (fun s -> s |> Graph.stringToKey |> Some |> ChangeProposedSourceLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                    ]
+                                                                    div [ _class "col-md-3" ] [
+                                                                        button [ attr.disabled source.ProposedLink.IsNone; _class "btn btn-primary"; on.click(
+                                                                            fun _ -> RelateNodes(
+                                                                                source.SelectedSource |> fst |> fst, 
+                                                                                source.ProposedLink.Value, 
+                                                                                Sources.SourceRelation.UsesPrimarySource |> GraphStructure.ProposedRelation.Source) 
+                                                                                    |> FormMessage |> dispatch; ChangeProposedSourceLink None |> dispatch) ] [ text "Link" ]
+                                                                    ]
+                                                                ]
+                                                                div [ _class "row g-3" ] [
+                                                                    div [ _class "col-md-3" ] [
+                                                                        label [] [ text "...or add a source not yet listed" ]
+                                                                    ]
+                                                                    div [ _class "col-md-9" ] [
+                                                                        button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
+                                                                    ]
+                                                                ]
+                                                            ]
+                                                        | true -> 
+                                                            concat [
+                                                                ViewGen.makeNodeForm<Sources.SourceNode> (model.NodeCreationViewModels |> Map.tryFind "SourceNode") [
+                                                                    ThisIsSink ((source.SelectedSource |> fst |> fst), GraphStructure.ProposedRelation.Source(Sources.SourceRelation.UsesPrimarySource))
+                                                                ] (FormMessage >> dispatch)
+                                                                button [ _class "btn btn-danger"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Back (discard)" ]
+                                                            ]
+
                                                     ]
-                                                ]
-                                            ]
+                                            ] // end primary / secondary card.
 
                                             div [ _class "card" ] [
-                                                div [ _class "card-header" ] [ text "Q: How are the study timeline(s) formed?" ]
+                                                div [ _class "card-header text-bg-secondary" ] [ text "Q: How are the study timeline(s) formed?" ]
                                                 div [ _class "card-body" ] [
-                                                    div [ _class "card text-bg-secondary p-3"] [
+                                                    div [ _class "card"] [
                                                         p [] [ 
                                                             text "A study timeline is a continuous or discontinuous time-sequence over which biodiversity measures for biotic proxies are specified."
                                                             text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
                                                             text "If there are many points in a spatial area - for example individual tree-ring series - but the species are the same, you should specify a single timeline but attach a broader (e.g. regional) spatial context." ]
                                                         div [ _class "card" ] [
-                                                            div [ _class "card-header" ] [ text "Add an additional timeline" ]
+                                                            div [ _class "card-header text-bg-secondary" ] [ text "Add an additional timeline" ]
                                                             div [ _class "card-body" ] [
-                                                                ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualTimelineNode> [
+                                                                ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualTimelineNode> "Expression of time" [
                                                                     ("Year", [
                                                                         ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date" (Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) // TODO Uncertainty
                                                                         ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date" (Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) ])
@@ -626,8 +714,8 @@ module App =
                                                                     text "Specify a single spatial context for the timeline."
                                                                     text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
                                                                 ]
-                                                                div [ _class "card text-bg-secondary mb-3"] [
-                                                                    div [ _class "card-header" ] [ text "Required: Describe the study's spatial context" ]
+                                                                div [ _class "card"] [
+                                                                    div [ _class "card-header text-bg-secondary" ] [ text "Required: Describe the study timeline's spatial context" ]
                                                                     div [ _class "card-body" ] [
                                                                         ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") [
                                                                             ThisIsSink ((source.SelectedSource |> fst |> fst), Exposure.ExposureRelation.IsLocatedAt |> GraphStructure.ProposedRelation.Exposure)
@@ -654,7 +742,7 @@ module App =
                                             ] // end timelines card.                                                
 
                                             div [ _class "card" ] [
-                                                div [ _class "card-header" ] [ text "Q: Which biodiversity outcomes are associated with the timelines in this source?" ]
+                                                div [ _class "card-header text-bg-secondary" ] [ text "Q: Which biodiversity outcomes are associated with the timelines in this source?" ]
                                                 div [ _class "card-body" ] [
                                                     p [] [
                                                         text "Each temporal-spatial context (as specified above) may have one or more biodiversity outcomes associated with it."
@@ -718,6 +806,7 @@ module App =
                                                                                                 td [] []
                                                                                             ]
                                                                                         | _ -> empty
+                                                                                    | _ -> empty
                                                                                 ]
                                                                             ]
                                                                         ]

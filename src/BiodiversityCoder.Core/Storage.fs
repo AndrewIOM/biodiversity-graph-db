@@ -185,10 +185,10 @@ module Storage =
                     NodeTypeName = (updatedAtom |> fst |> snd).NodeType()
                     PrettyName = (updatedAtom |> fst |> snd).DisplayName()
                 }]
-            let! _ = replaceIndex (unwrap fileGraph).Directory newIndex
+            do! replaceIndex (unwrap fileGraph).Directory newIndex
             
             // 2. Update the individual cached file.
-            let! _ = saveAtom (unwrap fileGraph).Directory ((updatedAtom |> fst |> snd).NodeType()) ((updatedAtom |> fst |> fst)) updatedAtom
+            do! saveAtom (unwrap fileGraph).Directory ((updatedAtom |> fst |> snd).NodeType()) ((updatedAtom |> fst |> fst)) updatedAtom
             
             // 3. Update file-based graph record.
             let newNodesByType = nodesByType newIndex

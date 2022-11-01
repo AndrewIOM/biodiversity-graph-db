@@ -458,6 +458,7 @@ module GraphStructure =
                 | HasProxyInfo -> compare source sink rel (Relation.Exposure HasProxyInfo)
                 | HasOrphanProxy -> compare source sink rel (Relation.Exposure HasOrphanProxy)
                 | IsLocatedAt -> compare source sink rel (Relation.Exposure IsLocatedAt)
+                | ConstructedWithDate -> compare source sink rel (Relation.Exposure ConstructedWithDate)
             | Population rel ->
                 match rel with
                 | InferredFrom -> compare source sink rel (Relation.Population InferredFrom)
@@ -465,9 +466,11 @@ module GraphStructure =
                 | HasLabel -> compare source sink rel (Relation.Population HasLabel)
                 | InferredUsing -> compare source sink rel (Relation.Population InferredUsing)
                 | InferredAs -> compare source sink rel (Relation.Population InferredAs)
+                | MeasuredBy -> compare source sink rel (Relation.Population MeasuredBy)
               | Source rel ->
                 match rel with
                 | HasTemporalExtent -> compare source sink rel (Relation.Source HasTemporalExtent)
+                | UsesPrimarySource -> compare source sink rel (Relation.Source UsesPrimarySource)
 
 
         /// Add a node relation to the graph, validating that the relation

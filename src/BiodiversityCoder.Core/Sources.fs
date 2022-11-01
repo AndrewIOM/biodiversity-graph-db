@@ -35,11 +35,17 @@ module Sources =
         Details: Text.Text
     }
 
+    type DatabaseNode = {
+        Name: Text.Text
+        Location: System.Uri
+    }
+
     /// A graph database node representing a source of information.
     type Source =
         | Bibliographic of ArticleMetadataNode
         | GreyLiterature of GreySourceNode
         | DarkData of DarkDataNode
+        | Database of DatabaseNode
 
     type SourceNode =
         | Included of Source
@@ -61,10 +67,12 @@ module Sources =
     type SourceNodeRelation =
         | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode
         | UsesPrimarySource of SourceNode * SourceNode
+        | UsedDatabase of SourceNode * SourceNode
 
     and SourceRelation =
         | HasTemporalExtent
         | UsesPrimarySource
+        | UsedDatabase of accessDate:System.DateOnly
 
 
 module BibtexParser =
