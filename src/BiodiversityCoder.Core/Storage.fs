@@ -52,8 +52,8 @@ module Storage =
 
     /// Types that are indexed in a single file rather than individual files.
     let typesToIndex = [ 
-        typeof<Exposure.TemporalIndex.CalYearNode>.Name ]
-        // "ProxiedTaxonNode" ]
+        typeof<Exposure.TemporalIndex.CalYearNode>.Name
+        "ProxiedTaxonNode" ]
 
     let loadIndex directory : Result<NodeIndexItem list,string> =
         loadCacheFile directory indexFile

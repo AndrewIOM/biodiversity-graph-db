@@ -228,8 +228,20 @@ module App =
                         | Ok n -> 
                             match model.Graph with
                             | Some g ->
+
+                                let checkRelations =
+                                    let check =
+                                        model.NodeCreationRelations 
+                                        |> Map.tryFind nodeType.Name 
+                                        |> Option.map(fun (_,rels) -> rels |> Map.map(fun k v -> v |> Seq.map(fun _ -> k)) |> Map.toSeq |> Seq.collect snd)
+                                        |> Option.map validateRelations
+                                    match check with
+                                    | Some b -> if b then Ok () else Error "Did not have required relations"
+                                    | None -> Ok ()
+
                                 // Is a normal new graph node:
-                                GraphStructure.Nodes.tryMakeNode nodeType n
+                                checkRelations
+                                |> Result.bind(fun _ -> GraphStructure.Nodes.tryMakeNode nodeType n)
                                 |> Result.bind (fun n -> Storage.addNodes g [ n ])
                                 |> Result.bind(fun (graph, addedNodes) ->
                                     // Add relations sink nodes were specified in EnterNodeRelationData
@@ -241,6 +253,7 @@ module App =
                                                 sinks |> List.map(fun s -> ThisIsSource(s,r))))
                                         |> (fun o -> match o with | Some o -> o | None -> [])
                                         |> List.append requiredRelations
+                                    
                                     // Add relations that are required as specified when creating each form.
                                     Seq.fold(fun fbg (relation:RelationViewModel) -> 
                                         fbg |> Result.bind(fun fbg ->
@@ -423,19 +436,50 @@ module App =
                 button [ _class "btn"; on.click (fun _ -> DismissError |> dispatch) ] [ text "Dismiss" ] ]
         | None -> empty
 
-    let timelineAtomDetailsView timelineAtom =
-        cond ((timelineAtom |> fst |> snd) |> GraphStructure.Nodes.asExposureNode) <| function
-        | Some exposureNode ->
-            cond exposureNode <| function
-            | Exposure.ExposureNode.TimelineNode timeline ->
-                cond timeline <| function
-                | Exposure.StudyTimeline.Continuous res
-                | Exposure.StudyTimeline.Discontinuous (res,_) ->
-                    cond res <| function
-                    | Exposure.StudyTimeline.Regular r -> textf "A continuous timeline with %A year timesteps." r
-                    | Exposure.StudyTimeline.Irregular -> textf "A continuous timeline with irregular timesteps."
-            | _ -> empty
-        | _ -> empty
+    let timelineAtomDetailsView timelineAtom g =
+        div [ _class "card "] [
+            div [ _class "card-body" ] [
+                cond (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.ExtentEarliest |> Seq.tryHead |> Option.bind (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                | Some early ->
+                    cond (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.ExtentLatest |> Seq.tryHead |> Option.bind (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                    | Some late ->
+                        h5 [ _class "card-title" ] [ textf "%s - %s timeline" early late ]
+                    | None -> empty
+                | None -> empty
+                cond ((timelineAtom |> fst |> snd) |> GraphStructure.Nodes.asExposureNode) <| function
+                | Some exposureNode ->
+                    cond exposureNode <| function
+                    | Exposure.ExposureNode.TimelineNode timeline ->
+                        cond timeline <| function
+                        | Exposure.StudyTimeline.Continuous res ->
+                            cond res <| function
+                            | Exposure.StudyTimeline.Regular r -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A continuous timeline with %A year timesteps" r ]
+                            | Exposure.StudyTimeline.Irregular -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A continuous timeline with irregular timesteps" ]
+                        | Exposure.StudyTimeline.Discontinuous (res,_) ->
+                            cond res <| function
+                            | Exposure.StudyTimeline.Regular r -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A discontinuous timeline with %A year timesteps" r ]
+                            | Exposure.StudyTimeline.Irregular -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A discontinuous timeline with irregular timesteps" ]
+                    | _ -> empty
+                | _ -> empty
+                cond (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.IsLocatedAt |> Seq.tryHead |> Option.bind (fun k -> Storage.atomByKey k g)) <| function
+                | Some context ->
+                    p [] [
+                        cond (context |> fst |> snd) <| function
+                        | GraphStructure.Node.PopulationNode p ->
+                            cond p <| function
+                            | GraphStructure.ContextNode c ->
+                                cond c.SamplingLocation <| function
+                                | FieldDataTypes.Geography.Site (lat,lon) -> textf "Occurs at the point %A DD, %A, DD" lat lon
+                                | FieldDataTypes.Geography.Locality (l,d,r,c) -> textf "Occurs at the locality %s (%s, %s, %s)" l.Value d.Value r.Value c.Value
+                                | FieldDataTypes.Geography.Region (r,c) -> textf "Occurs in the region %s (%s)" r.Value c.Value
+                                | FieldDataTypes.Geography.Country (c) -> textf "Occurs in the country %s" c.Value
+                                | _ -> textf "Occurs at %s." c.Name.Value
+                            | _ -> empty
+                        | _ -> empty
+                    ]
+                | None -> empty
+            ]
+        ]
 
 
     let view model dispatch =
@@ -463,8 +507,8 @@ module App =
                                 | None -> empty
 
                                 // Allow linking to taxonomic backbone here.
-                                div [ _class "card" ] [
-                                    div [ _class "card-header" ] [ text "Add a plant taxonomic name" ]
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Plant Taxonomy: Add a Taxon" ]
                                     div [ _class "card-body" ] [
                                         div [ _class "row g-3" ] [
                                             div [ _class "col" ] [
@@ -509,24 +553,40 @@ module App =
                                     ]
                                 ]
 
-                                h3 [] [ text "Context" ]
-                                hr []
-                                p [] [ text "You can relate `timelines` to a spatial context, represented by a Context node." ]
-                                ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") [] (FormMessage >> dispatch)
-                                h3 [] [ text "Taxonomy Node" ]
-                                hr []
-                                p [] [ text "In our systematic map, biotic proxies are related to real taxa by an inference method. Here, the 'Taxonomy Node' represents a *real* botanical or other taxon. We have pre-populated plant names using a taxonomic backbone." ]
-                                ViewGen.makeNodeForm<Population.Taxonomy.TaxonNode> (model.NodeCreationViewModels |> Map.tryFind "TaxonNode") [] (FormMessage >> dispatch)
-                                p [] [ text "In addition to the taxon node, there are nodes representing the common or vernacular names of species, genera, or families. Adding these is purely for the purposes of public interpretation of the graph database." ]
-                                ViewGen.makeNodeForm<Population.Taxonomy.VernacularTaxonLabelNode> (model.NodeCreationViewModels |> Map.tryFind "VernacularTaxonLabelNode") [] (FormMessage >> dispatch)
-                                h3 [] [ text "Biotic proxies" ]
-                                hr []
-                                p [] [ text "Biotic proxies are used to represent morphotypes, fossil remains etc. that are used to proxy species presence, but require further interpretation to connect to a *real* taxon. For example, pollen morphotypes require inference to connect to botanical taxa." ]
-                                ViewGen.makeNodeForm<Population.BioticProxies.BioticProxyNode> (model.NodeCreationViewModels |> Map.tryFind "BioticProxyNode") [] (FormMessage >> dispatch)
-                                h3 [] [ text "Inference method" ]
-                                hr []
-                                p [] [ text "Inference methods are used to translate from morphotypes or biotic proxies to real taxa." ]
-                                ViewGen.makeNodeForm<Population.BioticProxies.InferenceMethodNode> (model.NodeCreationViewModels |> Map.tryFind "InferenceMethodNode") [] (FormMessage >> dispatch)
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Non-Plant Taxonomic Groups: Add a Taxon" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "In our systematic map, biotic proxies are related to real taxa by an inference method. Here, the 'Taxonomy Node' represents a *real* botanical or other taxon. We have pre-populated plant names using a taxonomic backbone." ]
+                                        p [] [ text "Use this form to manually add taxa from non-plant groups. Make sure to add all levels in the hierarchy as accepted by the non-plant naming authority as specified in the protocol." ]
+                                        cond model.Graph <| function
+                                        | Some g -> concat [
+                                                ViewGen.RelationsForms.relationsToggle<Population.Taxonomy.TaxonNode> "Parent taxon" [
+                                                    ("Parent", [
+                                                        ViewGen.RelationsForms.selectExistingNode<Population.Taxonomy.TaxonNode> "The parent taxon" (Population.PopulationRelation.IsA |> GraphStructure.ProposedRelation.Population)
+                                                    ])] model.NodeCreationRelations g (FormMessage >> dispatch)
+                                                ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
+                                                    ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Population Population.PopulationRelation.IsA) savedRelations)
+                                                    (model.NodeCreationViewModels |> Map.tryFind "TaxonNode") [] (FormMessage >> dispatch)
+                                            ]
+                                        | None -> empty
+                                    ]
+                                ]
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a Biotic Proxy" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "Biotic proxies are used to represent morphotypes, fossil remains etc. that are used to proxy species presence, but require further interpretation to connect to a *real* taxon. For example, pollen morphotypes require inference to connect to botanical taxa." ]
+                                        ViewGen.makeNodeForm<Population.BioticProxies.BioticProxyNode> (model.NodeCreationViewModels |> Map.tryFind "BioticProxyNode") [] (FormMessage >> dispatch)
+                                    ]
+                                ]
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Add an Inference Method" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "Inference methods are used to translate from morphotypes or biotic proxies to real taxa." ]
+                                        ViewGen.makeNodeForm<Population.BioticProxies.InferenceMethodNode> (model.NodeCreationViewModels |> Map.tryFind "InferenceMethodNode") [] (FormMessage >> dispatch)
+                                    ]
+                                ]
+                                // p [] [ text "In addition to the taxon node, there are nodes representing the common or vernacular names of species, genera, or families. Adding these is purely for the purposes of public interpretation of the graph database." ]
+                                // ViewGen.makeNodeForm<Population.Taxonomy.VernacularTaxonLabelNode> (model.NodeCreationViewModels |> Map.tryFind "VernacularTaxonLabelNode") [] (FormMessage >> dispatch)
                             ]
                         | Page.Exposure -> div [] [ text "Exposure page" ]
                         | Page.Outcome -> div [] [ text "Outcome page" ]
@@ -537,7 +597,7 @@ module App =
                                 text "You can import sources from Colandr using the button below. The colandr raw output should be saved as 'colandr-titleabs-screen-results.csv' in the graph database folder."
                                 button [ _class "btn btn-primary"; on.click (fun _ -> ImportColandr |> dispatch) ] [ text "Import from Colandr (title-abstract screening)" ]
 
-                                div [ _class "card" ] [
+                                div [ _class "card mb-4" ] [
                                     div [ _class "card-header text-bg-secondary" ] [ text "Import new sources" ]
                                     text "Enter a bibtex-format file below."
                                     textarea [ bind.input.string model.Import (fun s -> ChangeImportText s |> dispatch) ] []
@@ -561,7 +621,7 @@ module App =
                                 button [ _class "btn btn-primary"; on.click (fun _ -> SelectFolder |> dispatch)] [ text "Select folder to connect to." ] ]
                             | Some g -> concat [
                                 
-                                div [ _class "card text-bg-secondary" ] [
+                                div [ _class "card mb-4 text-bg-secondary" ] [
                                     div [ _class "card-header text-bg-secondary" ] [ text "Source Details" ]
                                     div [ _class "card-body" ] [
                                         text "Selected source:"
@@ -604,7 +664,7 @@ module App =
                                         | Sources.SourceNode.Unscreened s -> 
                                             concat [
                                                 // Full-text screening options.
-                                                div [ _class "card" ] [
+                                                div [ _class "card mb-4" ] [
                                                     div [ _class "card-header text-bg-secondary" ] [ text "Q: Is the source relevant?" ]
                                                     div [ _class "card-body" ] [
                                                         p [] [ text "Please apply the eligbility criteria against the full-text PDF of this source and determine if the source should be included or excluded." ]
@@ -620,7 +680,7 @@ module App =
                                                 text notes.Value ]
                                         | Sources.SourceNode.Included s -> concat [
                                             div [ _class "alert alert-success" ] [ text "This source has been included at full-text level. Please code information as stated below." ]
-                                            div [ _class "card" ] [
+                                            div [ _class "card mb-4" ] [
                                                 div [ _class "card-header text-bg-secondary" ] [ text "Q: Is it a primary or secondary source?" ]
                                                 div [ _class "card-body" ] [
                                                     p [] [ 
@@ -634,7 +694,7 @@ module App =
                                                                     label [] [ text "Is this a primary source?" ]
                                                                 ]
                                                                 div [ _class "col-md-9" ] [
-                                                                    button [ _class "btn btn-secondary"; on.click(fun _ -> MarkPrimary Primary |> dispatch) ] [ text "Primary source" ]
+                                                                    button [ _class "btn btn-secondary mr-2"; on.click(fun _ -> MarkPrimary Primary |> dispatch) ] [ text "Primary source" ]
                                                                     button [ _class "btn btn-secondary"; on.click(fun _ -> MarkPrimary Secondary |> dispatch) ] [ text "Secondary source" ]
                                                                 ]
                                                             ]
@@ -664,31 +724,37 @@ module App =
                                                                             p [] [ textf "%A" (linkedSource |> fst |> snd) ]
                                                                     ]
                                                                 ]
-                                                                div [ _class "row g-3" ] [
-                                                                    div [ _class "col-md-3" ] [
-                                                                        label [] [ text "Link to another primary source" ]
+                                                                cond (source.CompletedSections |> Seq.contains "primary-or-secondary") <| function
+                                                                | true -> div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the primary / secondary source question." ]
+                                                                | false -> concat [
+                                                                    div [ _class "row g-3" ] [
+                                                                        div [ _class "col-md-3" ] [
+                                                                            label [] [ text "Link to another primary source" ]
+                                                                        ]
+                                                                        div [ _class "col-md-6" ] [
+                                                                            select [ _class "form-select"; bind.change.string (if source.ProposedLink.IsSome then source.ProposedLink.Value.AsString else "") 
+                                                                                (fun s -> s |> Graph.stringToKey |> Some |> ChangeProposedSourceLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                        ]
+                                                                        div [ _class "col-md-3" ] [
+                                                                            button [ attr.disabled source.ProposedLink.IsNone; _class "btn btn-primary"; on.click(
+                                                                                fun _ -> RelateNodes(
+                                                                                    source.SelectedSource |> fst |> fst, 
+                                                                                    source.ProposedLink.Value, 
+                                                                                    Sources.SourceRelation.UsesPrimarySource |> GraphStructure.ProposedRelation.Source) 
+                                                                                        |> FormMessage |> dispatch; ChangeProposedSourceLink None |> dispatch) ] [ text "Link" ]
+                                                                        ]
                                                                     ]
-                                                                    div [ _class "col-md-6" ] [
-                                                                        select [ _class "form-select"; bind.change.string (if source.ProposedLink.IsSome then source.ProposedLink.Value.AsString else "") 
-                                                                            (fun s -> s |> Graph.stringToKey |> Some |> ChangeProposedSourceLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                    div [ _class "row g-3" ] [
+                                                                        div [ _class "col-md-3" ] [
+                                                                            label [] [ text "...or add a source not yet listed" ]
+                                                                        ]
+                                                                        div [ _class "col-md-6" ] []
+                                                                        div [ _class "col-md-3" ] [
+                                                                            button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
+                                                                        ]
                                                                     ]
-                                                                    div [ _class "col-md-3" ] [
-                                                                        button [ attr.disabled source.ProposedLink.IsNone; _class "btn btn-primary"; on.click(
-                                                                            fun _ -> RelateNodes(
-                                                                                source.SelectedSource |> fst |> fst, 
-                                                                                source.ProposedLink.Value, 
-                                                                                Sources.SourceRelation.UsesPrimarySource |> GraphStructure.ProposedRelation.Source) 
-                                                                                    |> FormMessage |> dispatch; ChangeProposedSourceLink None |> dispatch) ] [ text "Link" ]
-                                                                    ]
-                                                                ]
-                                                                div [ _class "row g-3" ] [
-                                                                    div [ _class "col-md-3" ] [
-                                                                        label [] [ text "...or add a source not yet listed" ]
-                                                                    ]
-                                                                    div [ _class "col-md-6" ] []
-                                                                    div [ _class "col-md-3" ] [
-                                                                        button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
-                                                                    ]
+                                                                    hr []
+                                                                    button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "primary-or-secondary" |> dispatch) ] [ text "I've finished this question" ]
                                                                 ]
                                                             ]
                                                         | true -> 
@@ -698,35 +764,34 @@ module App =
                                                                 ] (FormMessage >> dispatch)
                                                                 button [ _class "btn btn-danger"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Back (discard)" ]
                                                             ]
-
                                                     ]
                                             ] // end primary / secondary card.
 
-                                            div [ _class "card" ] [
+                                            div [ _class "card mb-4" ] [
                                                 div [ _class "card-header text-bg-secondary" ] [ text "Q: How are the study timeline(s) formed?" ]
                                                 div [ _class "card-body" ] [
-                                                        p [] [ 
-                                                            text "A study timeline is a continuous or discontinuous time-sequence over which biodiversity measures for biotic proxies are specified."
-                                                            text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
-                                                            text "If there are many points in a spatial area - for example individual tree-ring series - but the species are the same, you should specify a single timeline but attach a broader (e.g. regional) spatial context." ]
-                                                        
+                                                        div [ _class "row" ] [
+                                                            div [ _class "col-md-12" ] [
+                                                                figure [ _class "figure w-50 float-end m-3" ] [ img [ _class "figure-img img-fluid rounded img-thumbnail"; attr.src "images/exposure-diagram-dates.png" ] ]
+                                                                p [] [ 
+                                                                    text "A study timeline is a continuous or discontinuous time-sequence over which biodiversity measures for biotic proxies are specified."
+                                                                    text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
+                                                                    text "If there are many points in a spatial area - for example individual tree-ring series - but the species are the same, you should specify a single timeline but attach a broader (e.g. regional) spatial context." ]
+                                                            ]
+                                                        ]
                                                         // View an individual temporal extent.
                                                         forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timelineAtom ->
-                                                            div [ _class "card" ] [
+                                                            div [ _class "card mb-4" ] [
                                                                 div [ _class "card-header" ] [ text ((timelineAtom |> fst |> snd).DisplayName()) ]
                                                                 div [ _class "card-body" ] [
-                                                                    timelineAtomDetailsView timelineAtom
-                                                                    ul [] [(forEach (timelineAtom |> snd) <| fun (_,sink,_,d) ->
-                                                                        li [] [ textf "-> %s (%A)" sink.AsString d ])]
-
+                                                                    timelineAtomDetailsView timelineAtom g
                                                                     cond (source.CompletedSections |> Seq.contains "timeline") <| function
                                                                     | true -> empty
                                                                     | false ->
-                                                                        div [ _class "row" ] [
+                                                                        concat [
                                                                             // Add a single spatial context or display it here.
                                                                             cond (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.IsLocatedAt |> Seq.tryHead |> Option.map (fun k -> Storage.atomByKey k g) ) <| function
-                                                                            | Some context ->
-                                                                                p [] [ textf "%A" context ]
+                                                                            | Some _ -> p [ _class "text-success" ] [ text "You've added the spatial context." ]
                                                                             | None -> 
                                                                                 concat [
                                                                                     div [ _class "alert alert-warning" ] [ text "You need to add a spatial context to this timeline." ]
@@ -734,7 +799,7 @@ module App =
                                                                                         text "Specify a single spatial context for the timeline."
                                                                                         text "Individual study timelines have their own spatial contexts. Therefore, time-series from different spatial locations should be classed as seperate time-series (e.g. multiple sediment cores)."
                                                                                     ]
-                                                                                    div [ _class "card"] [
+                                                                                    div [ _class "card mb-4"] [
                                                                                         div [ _class "card-header text-bg-warning" ] [ text "Required: Define the timeline's spatial context" ]
                                                                                         div [ _class "card-body" ] [
                                                                                             ViewGen.makeNodeForm<Population.Context.ContextNode> (model.NodeCreationViewModels |> Map.tryFind "ContextNode") [
@@ -752,7 +817,7 @@ module App =
                                                                                 p [] [ 
                                                                                     text "Describe the individul dates used to form this individual time-series. For example, these may be radiocarbon dates for a sedimentary sequence. "
                                                                                     text "For living specimen data (e.g. tree-ring data), use the 'Collection Date' option to specify the time of sampling (that forms the origin point of the time-series - e.g. growth year zero)." ]
-                                                                                div [ _class "card"] [
+                                                                                div [ _class "card mb-4"] [
                                                                                     div [ _class "card-header" ] [ text "Add a date" ]
                                                                                     div [ _class "card-body" ] [
                                                                                         ViewGen.makeNodeForm<Exposure.StudyTimeline.IndividualDateNode> (model.NodeCreationViewModels |> Map.tryFind "IndividualDateNode") [
@@ -770,15 +835,21 @@ module App =
                                                         | true -> div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the timelines section." ]
                                                         | false -> concat [
                                                             // Add another temporal extent.
-                                                            div [ _class "card" ] [
+                                                            div [ _class "card mb-4" ] [
                                                                 div [ _class "card-header" ] [ text "Add an additional timeline" ]
                                                                 div [ _class "card-body" ] [
+                                                                    p [] [ text "When defining a timeline by start and end dates, you may optionally enter uncertainty values. These are not required if not available." ]
                                                                     ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualTimelineNode> "Expression of time" [
-                                                                        ("Year", [
-                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date" (Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) // TODO Uncertainty
-                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date" (Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) ])
                                                                         ("Qualitative", [
                                                                             ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
+                                                                        ])
+                                                                        ("Year", [
+                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date" (Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) 
+                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date uncertainty (older bound)" (Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure)
+                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date uncertainty (younger bound)" (Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure)
+                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date" (Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure)
+                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date uncertainty (older bound)" (Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure)
+                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date uncertainty (younger bound)" (Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure)
                                                                         ])
                                                                     ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                     ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
@@ -796,17 +867,22 @@ module App =
                                                     ]
                                             ] // end timelines card.
 
-                                            div [ _class "card" ] [
+                                            div [ _class "card mb-4" ] [
                                                 div [ _class "card-header text-bg-secondary" ] [ text "Q: Which biodiversity outcomes are associated with the timelines in this source?" ]
                                                 div [ _class "card-body" ] [
-                                                    p [] [
-                                                        text "Each temporal-spatial context (as specified above) may have one or more biodiversity outcomes associated with it."
-                                                        text "A biodiversity outcome here means a combination of a biotic proxy (proxy -> inference method -> taxon) and an outcome measurement."
-                                                        text "For example, an outcome may be 'abundance', and the biotic proxy may be [ acacia-type (pollen morphotype) -> African pollen atlas -> Acacia (genus) ]"
-                                                    ]
-                                                    p [] [
-                                                        text "If a taxon is not present that you need, you can use the taxonomic lookup (requires internet connection) to create new taxon nodes."
-                                                        text "Similarly, if you need a new biotic proxy node or inference node, make these manually in the 'Population' tab to the left."
+                                                    div [ _class "row" ] [
+                                                        div [ _class "col-md-12" ] [
+                                                            figure [ _class "figure w-50 float-end m-3" ] [ img [ _class "figure-img img-fluid rounded img-thumbnail"; attr.src "images/population-diagram-hyperedge.png" ] ]
+                                                            p [] [
+                                                                text "Each temporal-spatial context (as specified above) may have one or more biodiversity outcomes associated with it."
+                                                                text "A biodiversity outcome here means a combination of a biotic proxy (proxy -> inference method -> taxon) and an outcome measurement."
+                                                                text "For example, an outcome may be 'abundance', and the biotic proxy may be [ acacia-type (pollen morphotype) -> African pollen atlas -> Acacia (genus) ]"
+                                                            ]
+                                                            p [] [
+                                                                text "If a taxon is not present that you need, you can use the taxonomic lookup (requires internet connection) to create new taxon nodes."
+                                                                text "Similarly, if you need a new biotic proxy node or inference node, make these manually in the 'Population' tab to the left."
+                                                            ]
+                                                        ]
                                                     ]
 
                                                     // 3. For each study timeline, add proxied taxa.
@@ -816,7 +892,7 @@ module App =
                                                         concat [
                                                             h4 [] [ text ((timelineAtom |> fst |> snd).DisplayName())]
                                                             hr []
-                                                            timelineAtomDetailsView timelineAtom
+                                                            timelineAtomDetailsView timelineAtom g
                                                             div [] [
                                                                 table [ _class "table" ] [
                                                                     thead [] [
@@ -862,10 +938,10 @@ module App =
                                                                                             td [] [ text outcome ]
                                                                                             td [] []
                                                                                         ]
-                                                                                        | None -> empty
-                                                                                    | None -> empty
-                                                                                | None -> empty
-                                                                            | None -> empty
+                                                                                        | None -> text "None A"
+                                                                                    | None -> text "None B"
+                                                                                | None -> text "None C"
+                                                                            | None -> textf "Proxy relation: %A" proxiedTaxonEdge
                                                                         ]
                                                                     ]
                                                                 ] // end proxied taxa table

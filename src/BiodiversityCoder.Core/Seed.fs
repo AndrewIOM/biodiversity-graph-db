@@ -59,7 +59,7 @@ module Seed =
                 printfn "Adding time nodes..."
                 graph |> Graph.addNodeData makeUniqueKey n)
 
-        let holoceneLabel = SliceLabelNode { Name = "Holocene" }
+        let holoceneLabel = SliceLabelNode { Name = forceOk (Text.createShort "Holocene"); DesignatingAuthority = forceOk (Text.createShort "Global Stratotype Section and Point") }
         
         // Outcomes: basic measures
         let outcomes = [
@@ -86,7 +86,7 @@ module Seed =
 
         // Add core relations
         let addTimeRelation year relation graph = result {
-            let! source = Nodes.tryFindTimePeriod "Holocene" graph, "Could not get Holocene node"
+            let! source = Nodes.tryFindTimePeriod (forceOk (Text.createShort "Holocene")) graph, "Could not get Holocene node"
             let! sink = Nodes.tryFindYear year graph, "Could not get year node"
             return! Relations.addRelation source sink relation 1 graph
         }

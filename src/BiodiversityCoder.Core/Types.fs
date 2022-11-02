@@ -119,6 +119,29 @@ module FieldDataTypes =
             | Country   of country:Text.ShortText
             | Arctic
 
+        let tryParseWith (tryParseFunc: string -> bool * _) = tryParseFunc >> function
+            | true, v    -> Ok v
+            | false, _   -> Error "Parse failed"
+
+        let parseDouble = tryParseWith System.Double.TryParse
+
+        type Latitude with 
+            static member TryCreate s = 
+                match s with 
+                | Number s -> createLatitude s
+                | Text s -> s |> parseDouble |> Result.bind createLatitude
+                | _ -> Error "Not a valid latitude"
+                |> Result.toOption
+        
+        type Longitude with 
+            static member TryCreate s = 
+                match s with 
+                | Number s -> createLongitude s
+                | Text s -> s |> parseDouble |> Result.bind createLongitude
+                | _ -> Error "Not a valid longitude"
+                |> Result.toOption
+
+
     [<RequireQualifiedAccess>]
     module StratigraphicSequence =
 
@@ -129,6 +152,8 @@ module FieldDataTypes =
 
         let createDepth i =
             if i > 0. then Ok (Depth (i * 1.<cm>)) else Error "Depth cannot be negative"
+
+        type Depth with static member TryCreate s = match s with | SimpleValue.Number s -> createDepth s |> Result.toOption | _ -> None
 
 
     [<RequireQualifiedAccess>]
@@ -247,3 +272,8 @@ module Result =
         match r with
         | Ok o -> fOk o
         | Error e -> fErr e
+    
+    let forceOk r =
+        match r with
+        | Ok o -> o
+        | Error e -> failwith e

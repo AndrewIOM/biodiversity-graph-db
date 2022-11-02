@@ -62,7 +62,8 @@ module Exposure =
             else Error <| sprintf "The year %i is not a valid time" yearBeforePresent
 
         type QualitativeLabelNode = {
-            Name: string
+            Name: Text.ShortText
+            DesignatingAuthority: Text.ShortText
         }
     
     /// The master node type for 'exposure' peco element.

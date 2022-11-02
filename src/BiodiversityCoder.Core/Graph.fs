@@ -291,7 +291,7 @@ module GraphStructure =
             | ExposureNode e ->
                 match e with
                 | YearNode y -> sprintf "%i cal yr BP" y.Year
-                | SliceLabelNode n -> n.Name
+                | SliceLabelNode n -> sprintf "%s (designated by: %s)" n.Name.Value n.DesignatingAuthority.Value
                 | TimelineNode n -> "A study timeline"
                 | DateNode n -> "An individual date"
             | OutcomeNode o ->
@@ -366,7 +366,7 @@ module GraphStructure =
         | ExposureNode e ->
             match e with
             | YearNode y -> sprintf "%iybp" y.Year |> toLower |> friendlyKey
-            | SliceLabelNode n -> n.Name |> toLower |> friendlyKey
+            | SliceLabelNode n -> sprintf "%s_by_%s" (safeString n.Name.Value) (safeString n.DesignatingAuthority.Value) |> toLower |> friendlyKey
             | TimelineNode _ -> guidKey (System.Guid.NewGuid())
             | DateNode _ -> guidKey (System.Guid.NewGuid())
         | OutcomeNode o ->

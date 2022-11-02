@@ -74,6 +74,7 @@ module ``When converting a view model to an instance`` =
         | Error e -> Assert.True(false, e)
 
     open Exposure.StudyTimeline
+    open BiodiversityCoder.Core.Population.Context
 
     [<Fact>]
     let ``works with list fields`` () =
@@ -95,9 +96,62 @@ module ``When converting a view model to an instance`` =
                 Discontinuous(Irregular, [
                     Hiatus (122.<OldDate.calYearBP>, 143.<OldDate.calYearBP>)
                 ])
-                //Morphotype <| Microfossil(Pollen, (Text.ShortText.TryCreate(SimpleValue.Text "Salix-type").Value))
             Assert.Equal(expected, r :?> Exposure.StudyTimeline.IndividualTimelineNode)
         | Error e -> Assert.True(false, e)
+
+
+    [<Fact>]
+    let ``works with option types`` () =
+        let vm: Result<obj,string> = 
+                Fields([
+                    "Date", DU("RadiocarbonCalibrated", Fields([
+                        "calibratedDate", FieldValue(Number 2000.)
+                        "calibrationCurve", FieldValue(Text "IntCal17") ] |> Map.ofList))
+                    "Discarded", FieldValue (Boolean false)
+                    "MaterialDated", FieldValue (Text "leaves")
+                    "SampleDepth", DU("Some", Fields([
+                        "Value", FieldValue (Number 20.)
+                    ] |> Map.ofList))
+                    "TimeEstimate", FieldValue(Number(2000.))
+                ] |> Map.ofList
+                ) |> createFromViewModel (typeof<IndividualDateNode>)
+        match vm with
+        | Ok r -> 
+            let expected = {
+                Date = OldDate.RadiocarbonCalibrated(2000.<OldDate.calYearBP>, Text.createShort("IntCal17") |> Result.forceOk)
+                TimeEstimate = 2000.<OldDate.calYearBP>
+                MaterialDated = Text.createShort("leaves") |> Result.forceOk
+                SampleDepth = StratigraphicSequence.createDepth 20. |> forceOk |> Some
+                Discarded = false
+            }
+            Assert.Equal(expected, r :?> IndividualDateNode)
+        | Error e -> Assert.True(false, e)
+
+
+    [<Fact>]
+    let ``works for spatial types`` () =
+        let vm: Result<obj,string> = 
+                Fields([
+                    "Name", FieldValue (Text "Brooks Range")
+                    "SamplingLocation", DU("Site", Fields([
+                        "latitude", FieldValue(Text "56")
+                        "longitude", FieldValue(Text "-170") ] |> Map.ofList))
+                    "SampleOrigin", DU ("LakeSediment", NotEnteredYet)
+                    "SampleLocationDescription", DU("None", NotEnteredYet)
+                ] |> Map.ofList
+                ) |> createFromViewModel (typeof<ContextNode>)
+        match vm with
+        | Ok r -> 
+            let expected = {
+                Name = Text.createShort("Brooks Range") |> Result.forceOk
+                SamplingLocation = Geography.Site(Geography.createLatitude 56. |> forceOk, Geography.createLongitude -170. |> forceOk)
+                SampleOrigin = LakeSediment
+                SampleLocationDescription = None
+            }
+            Assert.Equal(expected, r :?> ContextNode)
+        | Error e -> Assert.True(false, e)
+
+
 
     // [<Fact>]
     // let ``works with DU containing fields of records and DU types`` () =
