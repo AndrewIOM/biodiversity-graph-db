@@ -268,6 +268,10 @@ module Storage =
     let addNodes fileGraph nodes = 
         addNodes' (Graph.addNodeData GraphStructure.makeUniqueKey) fileGraph nodes
 
+    /// Add nodes - but skip over them if they already exist.
+    let addOrSkipNodes fileGraph nodes =
+        addNodes' (Graph.addNodeDataOrSkip GraphStructure.makeUniqueKey) fileGraph nodes
+
     /// For adding an atom manually (from seeding)
     let private addAtomsUnsafe fileGraph nodes =
         addNodes' (fun i graph -> (graph |> List.append i, i |> List.map fst) |> Ok) fileGraph nodes

@@ -15,19 +15,12 @@ module ``When making a graph`` =
         Assert.Empty g
 
     [<Fact>]
-    let ``nodes are added with sequential ids`` () =
-        let result = g |> Graph.addNodeData (Seq.init 150 (fun _ -> outcomeNode))
-        let ids = result |> fst |> Seq.map (fst >> fst)
-        Assert.Equal([0 .. 149], ids)
-        Assert.Equal(149, result |> snd)
-
-    [<Fact>]
     let ``nodes cannot have duplicate ids`` () =
-        Assert.Throws<Exception> (
-            fun () ->
-                g 
-                |> Graph.addNode (1, outcomeNode)
-                |> Graph.addNode (1, outcomeNode) |> ignore)
+        let result = 
+            g 
+            |> Graph.addNode (Graph.FriendlyKey("a","v"), outcomeNode)
+            |> Result.bind (Graph.addNode (Graph.FriendlyKey("a","v"), outcomeNode))
+        Assert.True(match result with | Error _ -> true | _ -> false)
 
 module ``When seeding a graph`` =
 
@@ -45,27 +38,27 @@ module ``When lookup up relation constraints`` =
 
     let g : Graph.Graph<Node,Relation> = Graph.empty
 
-    let relate relation g =
-        result {
-                let! plantae = FieldDataTypes.Text.createShort "Plantae"
-                let graph = 
-                    g |> Graph.addNodeData [
-                        PopulationNode (TaxonomyNode Taxonomy.Life)
-                        PopulationNode (TaxonomyNode <| Taxonomy.Kingdom plantae)
-                    ] |> fst
-                let! source = Nodes.tryFindTaxon (fun n -> n = Taxonomy.Kingdom plantae) graph, "Could not get source"
-                let! sink = Nodes.tryFindTaxon (fun n -> n = Taxonomy.Life) graph, "Could not get sink"
-                return! Relations.addRelation source sink relation 1 graph
-            }
+    // let relate relation g =
+    //     result {
+    //             let! plantae = FieldDataTypes.Text.createShort "Plantae"
+    //             let graph = 
+    //                 g |> Graph.addNodeData [
+    //                     PopulationNode (TaxonomyNode Taxonomy.Life)
+    //                     PopulationNode (TaxonomyNode <| Taxonomy.Kingdom plantae)
+    //                 ] |> fst
+    //             let! source = Nodes.tryFindTaxon (fun n -> n = Taxonomy.Kingdom plantae) graph, "Could not get source"
+    //             let! sink = Nodes.tryFindTaxon (fun n -> n = Taxonomy.Life) graph, "Could not get sink"
+    //             return! Relations.addRelation source sink relation 1 graph
+    //         }
 
-    [<Fact>]
-    let ``can add a valid relation`` () =
-        match g |> relate (Population IsA) with
-        | Ok g -> Assert.True(g |> Seq.head |> snd |> Seq.isEmpty)
-        | Error _ -> Assert.True(false)
+    // [<Fact>]
+    // let ``can add a valid relation`` () =
+    //     match g |> relate (Population IsA) with
+    //     | Ok g -> Assert.True(g |> Seq.head |> snd |> Seq.isEmpty)
+    //     | Error _ -> Assert.True(false)
 
-    [<Fact>]
-    let ``errors on invalid relation`` () =
-        match g |> relate (Population HasLabel) with
-        | Ok _ -> Assert.True(false)
-        | Error _ -> Assert.True(true)
+    // [<Fact>]
+    // let ``errors on invalid relation`` () =
+    //     match g |> relate (Population HasLabel) with
+    //     | Ok _ -> Assert.True(false)
+    //     | Error _ -> Assert.True(true)

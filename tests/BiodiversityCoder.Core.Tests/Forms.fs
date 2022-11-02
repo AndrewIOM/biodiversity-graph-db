@@ -47,13 +47,15 @@ module ``When converting a view model to an instance`` =
             DU("Subspecies", Fields([ 
                 "generic", FieldValue(Text "Betula")
                 "specific", FieldValue(Text "pendula")
-                "subspecific", FieldValue(Text "mandshurica") ] |> Map.ofList))
+                "subspecific", FieldValue(Text "mandshurica")
+                "authorship", FieldValue(Text "L.") ] |> Map.ofList))
             |> createFromViewModel (typeof<TaxonNode>)
         match vm with
         | Ok r -> Assert.Equal(Subspecies(
             (Text.ShortText.TryCreate(SimpleValue.Text "Betula").Value),
             (Text.ShortText.TryCreate(SimpleValue.Text "pendula").Value),
-            (Text.ShortText.TryCreate(SimpleValue.Text "mandshurica").Value)), r :?> TaxonNode)
+            (Text.ShortText.TryCreate(SimpleValue.Text "mandshurica").Value),
+            (Text.ShortText.TryCreate(SimpleValue.Text "L.").Value)), r :?> TaxonNode)
         | Error e -> Assert.True(false, e)
 
     [<Fact>]
@@ -71,29 +73,55 @@ module ``When converting a view model to an instance`` =
             Assert.Equal(expected, r :?> BioticProxyNode)
         | Error e -> Assert.True(false, e)
 
+    open Exposure.StudyTimeline
+
     [<Fact>]
-    let ``works with DU containing fields of records and DU types`` () =
+    let ``works with list fields`` () =
         let vm: Result<obj,string> = 
-            DU("GreyLiterature", Fields([
-                "Item", Fields([
-                    "Contact", Fields([
-                        "FirstName", FieldValue (Text "Hello")
-                        "LastName", FieldValue (Text "Hello")
-                    ] |> Map.ofList)
-                    "License", DU("Creative Commons Attribution 4 International", NotEnteredYet)
-                    "Title", FieldValue (Text "Piece of paper found in a cupboard")
-                    ] |> Map.ofList)
-            ] |> Map.ofList )) |> createFromViewModel (typeof<SourceNode>)
+            DU("Discontinuous",
+                Fields([
+                    "resolution", DU("Irregular", NotEnteredYet)
+                    "hiatuses", FieldList [
+                        0, DU("Hiatus", Fields([
+                            "oldest", FieldValue(Number 122.)
+                            "youngest", FieldValue(Number 143.)
+                        ] |> Map.ofList))
+                    ]
+                ] |> Map.ofList)
+                ) |> createFromViewModel (typeof<Exposure.StudyTimeline.IndividualTimelineNode>)
         match vm with
         | Ok r -> 
-            let expected = 
-                GreyLiterature {
-                    Contact = {
-                        FirstName = (Text.ShortText.TryCreate(SimpleValue.Text "Hello").Value)
-                        LastName = (Text.ShortText.TryCreate(SimpleValue.Text "Hello").Value)
-                    }
-                    License = ``Creative Commons Attribution 4 International``
-                    Title = (Text.Text.TryCreate(SimpleValue.Text "Piece of paper found in a cupboard").Value)
-                }
-            Assert.Equal(expected, r :?> SourceNode)
+            let expected =
+                Discontinuous(Irregular, [
+                    Hiatus (122.<OldDate.calYearBP>, 143.<OldDate.calYearBP>)
+                ])
+                //Morphotype <| Microfossil(Pollen, (Text.ShortText.TryCreate(SimpleValue.Text "Salix-type").Value))
+            Assert.Equal(expected, r :?> Exposure.StudyTimeline.IndividualTimelineNode)
         | Error e -> Assert.True(false, e)
+
+    // [<Fact>]
+    // let ``works with DU containing fields of records and DU types`` () =
+    //     let vm: Result<obj,string> = 
+    //         DU("GreyLiterature", Fields([
+    //             "Item", Fields([
+    //                 "Contact", Fields([
+    //                     "FirstName", FieldValue (Text "Hello")
+    //                     "LastName", FieldValue (Text "Hello")
+    //                 ] |> Map.ofList)
+    //                 "License", DU("Creative Commons Attribution 4 International", NotEnteredYet)
+    //                 "Title", FieldValue (Text "Piece of paper found in a cupboard")
+    //                 ] |> Map.ofList)
+    //         ] |> Map.ofList )) |> createFromViewModel (typeof<SourceNode>)
+    //     match vm with
+    //     | Ok r -> 
+    //         let expected = 
+    //             GreyLiterature {
+    //                 Contact = {
+    //                     FirstName = (Text.ShortText.TryCreate(SimpleValue.Text "Hello").Value)
+    //                     LastName = (Text.ShortText.TryCreate(SimpleValue.Text "Hello").Value)
+    //                 }
+    //                 License = ``Creative Commons Attribution 4 International``
+    //                 Title = (Text.Text.TryCreate(SimpleValue.Text "Piece of paper found in a cupboard").Value)
+    //             }
+    //         Assert.Equal(expected, r :?> SourceNode)
+    //     | Error e -> Assert.True(false, e)

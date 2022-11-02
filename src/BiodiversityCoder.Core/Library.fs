@@ -296,7 +296,7 @@ module App =
                                     |> List.distinct
                                     |> List.map(GraphStructure.TaxonomyNode >> GraphStructure.Node.PopulationNode)
 
-                                let! updatedGraph, updatedNodes = Storage.addNodes g nodes
+                                let! updatedGraph, updatedNodes = Storage.addOrSkipNodes g nodes
 
                                 let relationsByKey =
                                     relations

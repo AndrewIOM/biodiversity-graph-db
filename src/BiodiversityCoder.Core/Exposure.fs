@@ -41,7 +41,7 @@ module Exposure =
             /// time series that have uneven timesteps, for example sedimentary data.
             | Irregular
         
-        and Hiatus = float<OldDate.calYearBP> * float<OldDate.calYearBP>
+        and Hiatus = Hiatus of oldest:float<OldDate.calYearBP> * youngest:float<OldDate.calYearBP>
 
 
     /// The temporal index handles relations between calendar-based / qualitative-based

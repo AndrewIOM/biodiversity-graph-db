@@ -112,7 +112,7 @@ module FieldDataTypes =
 
         type SamplingLocation =
             | Site      of latitude:Latitude * longitude:Longitude
-            | Area      of Polygon
+            | Area      of polygon:Polygon
             | Locality  of locality:Text.ShortText * district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
             | District  of district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
             | Region    of region:Text.ShortText * country:Text.ShortText

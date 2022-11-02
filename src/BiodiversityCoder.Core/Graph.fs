@@ -69,6 +69,15 @@ module Graph =
             graph @ [ newAtom ] |> Ok
         | Some _ -> Error "node already exists"
 
+    let addNodeOrSkip node graph =
+        let id = fst node
+        match getNode id graph with
+        | None ->
+            let newAdjacency = []
+            let newAtom = node, newAdjacency
+            graph @ [ newAtom ] |> Ok
+        | Some _ -> graph |> Ok
+
     let replaceNodeData node graph : Result<Graph<'nodeData,_>,string> =
         let id = fst node
         match getAtom id graph with
@@ -85,6 +94,14 @@ module Graph =
                     let newNode = makeKey data, data
                     (acc 
                      |> Result.bind(fun (acc,acc2) -> addNode newNode acc |> Result.map(fun r -> r,acc2))
+                     |> Result.lift(fun (r,acc2) -> r, newNode :: acc2))
+                     ) (Ok (graph, [])) items
+    
+    let addNodeDataOrSkip (makeKey:'nodeData -> UniqueKey) (items:'nodeData seq) (graph:Graph<'nodeData,_>) =
+        Seq.fold(fun (acc) data ->
+                    let newNode = makeKey data, data
+                    (acc 
+                     |> Result.bind(fun (acc,acc2) -> addNodeOrSkip newNode acc |> Result.map(fun r -> r,acc2))
                      |> Result.lift(fun (r,acc2) -> r, newNode :: acc2))
                      ) (Ok (graph, [])) items
     
@@ -253,7 +270,7 @@ module GraphStructure =
                     match n with
                     | BioticProxies.InferenceMethodNode.Implicit -> "Implicit"
                     | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "Explicit: Atlas or Key - %s" r.Value
-                    | BioticProxies.InferenceMethodNode.ImplicitByExpert (lastName, initials) -> sprintf "Explicit: Atlas or Key - %s, %s" lastName.Value initials.Value
+                    | BioticProxies.InferenceMethodNode.ImplicitByExpert (lastName, initials) -> sprintf "Implicit: Expert ID - %s, %s" lastName.Value initials.Value
                 | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
                 | ContextNode n -> sprintf "%s: %s" (n.SamplingLocation.GetType().Name) n.Name.Value
                 | VernacularTaxonLabelNode(_) -> failwith "Not Implemented"

@@ -4,6 +4,7 @@ type NodeViewModel =
     | DU of string * NodeViewModel
     | Fields of Map<string,NodeViewModel>
     | FieldValue of SimpleValue
+    | FieldList of (int * NodeViewModel) list
     | NotEnteredYet
 
 type RelationViewModel =
@@ -22,6 +23,15 @@ module Create =
     open Microsoft.FSharp.Reflection
     open System.Reflection
 
+    type ReflectiveListBuilder = 
+        static member BuildList<'a> (args: obj list) = 
+            [ for a in args do yield a :?> 'a ] 
+        static member BuildTypedList lType (args: obj list) = 
+            typeof<ReflectiveListBuilder>
+                .GetMethod("BuildList")
+                .MakeGenericMethod([|lType|])
+                .Invoke(null, [|args|])
+
     let private (|SomeObj|_|) =
         let ty: System.Type = typedefof<option<_>>
         fun (a:obj) ->
@@ -36,6 +46,24 @@ module Create =
         match x with    
         | SomeObj(x1) -> Ok (rest x1)
         | _ -> Error "Invalid type"
+
+    let processField field propertyType createFromViewModel =
+        match field with
+        | FieldValue _ -> createFromViewModel propertyType field
+        | NotEnteredYet -> Error "A value was missing"
+        | Fields newFields ->
+            // A record within a record field.
+            createFromViewModel propertyType (Fields newFields)
+        | DU (case, vm2) -> 
+            // Pass through to main method to handle as new type.
+            if FSharpType.IsUnion(propertyType) then
+                match FSharpType.GetUnionCases(propertyType) |> Seq.tryFind(fun x -> x.Name = case) with
+                | Some caseInfo -> 
+                    // The case exists. Run this properly.
+                    createFromViewModel caseInfo.DeclaringType (DU(case,vm2))
+                | None -> Error "The DU case as specified in the view model does not exist"
+            else Error "The type is not a DU as specified in the view model"
+        | FieldList newFields -> createFromViewModel propertyType (FieldList newFields)
 
     let rec createFromViewModel (objType:System.Type) (viewModel: NodeViewModel) : Result<obj,string> = 
         printfn "Type passed in is %s" objType.Name
@@ -75,12 +103,26 @@ module Create =
                             |> Result.lift (fun i -> [ i ])
                         | _ -> Error "Only a single value was given for a multi- or -zero field DU case."
                     | Fields (newFields: Map<string,NodeViewModel>) ->
-                        // Multiple fields specified for constructing DU case.
-                        caseInfo.GetFields() |> Array.map(fun f ->
+                        caseInfo.GetFields() |> Array.mapi(fun i f ->
+                            // Multiple fields specified for constructing DU case.
                             match newFields |> Map.tryFind f.Name with
                             | Some newField -> createFromViewModel f.PropertyType newField
                             | None -> Error (sprintf "Value not found for DU field %s" f.Name)
                         ) |> Array.toList |> Result.ofList
+                    | FieldList fl ->
+                        match caseInfo.GetFields().Length with
+                        | 1 -> 
+                            if (objType.IsGenericType && objType.GetGenericTypeDefinition() = typedefof<_ list>)
+                            then
+                                // Is a list<'a>. Collect 'fields' into items for the list.
+                                let listInstanceType = objType.GetProperty("Head").PropertyType
+                                fl 
+                                |> Seq.map(fun (i,vm) -> processField vm listInstanceType createFromViewModel)
+                                |> Seq.toList
+                                |> Result.ofList
+                                |> Result.map(fun l -> [l :> obj])
+                            else Error "Not a list type"
+                        | _ -> Error "A list was specified but the DU does not have only one list type field"
                     )
                 args |> Result.lift(fun args -> Reflection.FSharpValue.MakeUnion(caseInfo, args |> List.toArray))
             | None -> Error (sprintf "The DU case %s does not exist on this type." case1)
@@ -106,32 +148,31 @@ module Create =
                 | Time t -> t :> obj |> Ok
                 | Boolean t -> t :> obj |> Ok
         | Fields newFields ->
-            // Fields - when specified not under a DU - represent an F# record ONLY.
-            let recordFields = Reflection.FSharpType.GetRecordFields(objType)
-            let values = recordFields |> Array.map(fun f ->
-                if newFields |> Map.containsKey f.Name 
-                then 
-                    match newFields.[f.Name] with
-                    | FieldValue _ -> createFromViewModel f.PropertyType newFields.[f.Name]
-                    | NotEnteredYet -> Error "A value was missing"
-                    | Fields newFields ->
-                        // A record within a record field.
-                        createFromViewModel f.PropertyType (Fields newFields)
-                    | DU (case, vm2) -> 
-                        // Pass through to main method to handle as new type.
-                        if FSharpType.IsUnion(f.PropertyType) then
-                            match FSharpType.GetUnionCases(f.PropertyType) |> Seq.tryFind(fun x -> x.Name = case) with
-                            | Some caseInfo -> 
-                                // The case exists. Run this properly.
-                                createFromViewModel caseInfo.DeclaringType (DU(case,vm2))
-                            | None -> Error "The DU case as specified in the view model does not exist"
-                        else Error "The type is not a DU as specified in the view model"
-                else Error "Some properties are missing" ) |> Array.toList |> Result.ofList
-            match values with
-            | Ok values ->
-                let created = Reflection.FSharpValue.MakeRecord(objType, values |> List.toArray)
-                created |> Ok
-            | Error e -> Error e
+            // Fields - when specified not under a DU - represent an F# record.
+            if Reflection.FSharpType.IsRecord(objType) then
+                let recordFields = Reflection.FSharpType.GetRecordFields(objType)
+                let values = recordFields |> Array.map(fun f ->
+                    if newFields |> Map.containsKey f.Name 
+                    then processField (newFields.[f.Name]) f.PropertyType createFromViewModel
+                    else Error "Some properties are missing" ) |> Array.toList |> Result.ofList
+                match values with
+                | Ok values ->
+                    let created = Reflection.FSharpValue.MakeRecord(objType, values |> List.toArray)
+                    created |> Ok
+                | Error e -> Error e
+            else Error "Not a list or a record type"
+        | FieldList fl ->
+            if (objType.IsGenericType && objType.GetGenericTypeDefinition() = typedefof<_ list>)
+            then
+                // Is a list<'a>. Collect 'fields' into items for the list.
+                let listInstanceType = objType.GetProperty("Head").PropertyType                
+                fl 
+                |> Seq.map(fun (i,vm) -> processField vm listInstanceType createFromViewModel)
+                |> Seq.toList
+                |> Result.ofList
+                |> Result.map(fun ol -> ReflectiveListBuilder.BuildTypedList listInstanceType ol)
+            else Error "Not a list type"
+    
 
 module Merge =
 
@@ -147,27 +188,47 @@ module Merge =
                 else DU(case1, updateNodeViewModel NotEnteredYet newValue)
             | NotEnteredYet -> DU(case1, updateNodeViewModel newValue newValue)
             | FieldValue _
+            | FieldList _
             | Fields _ -> DU(case1, updateNodeViewModel newValue newValue)
         | NotEnteredYet -> NotEnteredYet
         | FieldValue v -> FieldValue v
-        | Fields newFields ->
+        | Fields (newFields: Map<string,NodeViewModel>) ->
             // Merge fields together if both field types.
             match master with
             | DU _
             | NotEnteredYet
+            | FieldList _
             | FieldValue _ -> Fields(newFields |> Map.map(fun _ vm -> updateNodeViewModel NotEnteredYet vm))
             | Fields oldFields ->
-                // if newFields.Count <> 1 then Fields newFields
-                // else
-                    let k = newFields |> Seq.head
-                    let x = oldFields |> Map.add k.Key k.Value
-                    Fields x
+                let k = newFields |> Seq.head
+                Fields(
+                    match oldFields |> Map.tryFind k.Key with
+                    | Some oldFieldValue -> oldFields |> Map.add k.Key (updateNodeViewModel oldFieldValue k.Value)
+                    | None -> oldFields |> Map.add k.Key k.Value )
+        | FieldList fl ->
+            match master with
+            | FieldList oldFl ->
+                let newData =
+                    match oldFl |> Seq.tryFind(fun (i,_) -> i = fst fl.Head) with
+                    | Some oldField -> 
+                        if snd fl.Head = NotEnteredYet
+                        then oldFl |> List.except [ oldField ]
+                        else oldFl |> List.except [ oldField ] |> List.append [(fst oldField, updateNodeViewModel (snd oldField) (snd fl.Head))]
+                    | None -> 
+                        if snd fl.Head = NotEnteredYet 
+                        then oldFl 
+                        else oldFl |> List.append [ fl.Head ]
+                    |> List.sortBy fst
+                if newData.Length = 0 then NotEnteredYet else (FieldList newData)
+            | _ ->  FieldList(fl |> List.map(fun (i,vm) -> i, updateNodeViewModel NotEnteredYet vm))
 
 module ViewGen =
 
     open Bolero.Html
 
     let _class = attr.``class``
+
+    let isList (t:System.Type) = t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<_ list>
 
     /// Generate help text from the `Help` attribute if specified.
     let genHelp (field: System.Reflection.PropertyInfo) =
@@ -242,10 +303,22 @@ module ViewGen =
                 | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput existingValue 9999 dispatch
                 | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput existingValue 2 dispatch
                 | t when t = typeof<float> -> genFloatInput existingValue dispatch
+                | t when t = typeof<float> -> genFloatInput existingValue dispatch
                 | t when t = typeof<int> -> genFloatInput existingValue dispatch
                 | t when t = typeof<bool> -> genTrueFalseToggle existingValue dispatch
                 | _ -> genStringInput existingValue 9999 dispatch)
                 genHelp field
+            ]
+        ]
+
+    let listGroup field items =
+        div [ _class "row mb-3" ] [
+            label [ attr.``for`` (genName field); _class "col-sm-2 col-form-label" ] [ genName field ]
+            div [ _class "col-sm-10" ] [
+                div [ _class "list-group" ] [
+                    forEach items <| fun i -> div [ _class "list-group-item" ] [ i ]
+                    genHelp field
+                ]
             ]
         ]
 
@@ -261,39 +334,56 @@ module ViewGen =
             | FieldValue existingValue -> 
                 // Field is a simple type with a value already set. Render with value.
                 genField field (Some existingValue) (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
+            | FieldList l ->
+                listGroup field [
+                    forEach l <| fun k -> concat [
+                        renderPropertyInfo f (field.PropertyType.GetProperty("Head")) (fun vm -> nestedVm <| FieldList([fst k, vm])) dispatch makeField' formId
+                        small [ on.click(fun _ -> EnterNodeCreationData(formId,nestedVm (FieldList [fst k, NotEnteredYet])) |> dispatch) ] [ text "Remove this one" ]
+                    ]
+                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> EnterNodeCreationData(formId,nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, NotEnteredYet] )) |> dispatch) ] [ text "Add another" ] ]
             | Fields _
             | NotEnteredYet ->
-                // Field does not have an existing value. Render cleanly.
-                cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
-                | true -> 
-                    // A field is another DU. Make a nested DU view model.
-                    makeField' (Some field) NotEnteredYet nestedVm field.PropertyType dispatch
-                | false -> 
-                    // A field is not a DU. 
-                    cond (Reflection.FSharpType.IsRecord(field.PropertyType)) <| function
-                    | true ->
-                        // Is a record. Render fields nested.
-                        forEach (Reflection.FSharpType.GetRecordFields(field.PropertyType)) <| fun field ->
-                            renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
-                    | false ->
-                        // Is not a DU or record. Render simple field.
-                        genField field None (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
+                cond (isList field.PropertyType) <| function
+                | true ->
+                    listGroup field [ 
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> EnterNodeCreationData(formId,nestedVm (FieldList [(0, NotEnteredYet)])) |> dispatch) ] [ text "Add another" ] ]
+                | false ->
+                    // Field does not have an existing value. Render cleanly.
+                    cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
+                    | true -> 
+                        // A field is another DU. Make a nested DU view model.
+                        makeField' (Some field) NotEnteredYet nestedVm field.PropertyType dispatch
+                    | false -> 
+                        // A field is not a DU. 
+                        cond (Reflection.FSharpType.IsRecord(field.PropertyType)) <| function
+                        | true ->
+                            // Is a record. Render fields nested.
+                            forEach (Reflection.FSharpType.GetRecordFields(field.PropertyType)) <| fun field ->
+                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
+                        | false ->
+                            // Is not a DU or record. Render simple field.
+                            genField field None (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
         | None ->
             // Field does not have an existing value. Render cleanly.
-            cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
-            | true -> 
-                // A field is another DU. Make a nested DU view model.
-                makeField' (Some field) NotEnteredYet nestedVm field.PropertyType dispatch
-            | false -> 
-                // A field is not a DU. 
-                cond (Reflection.FSharpType.IsRecord(field.PropertyType)) <| function
+            cond (isList field.PropertyType) <| function
                 | true ->
-                    // Is a record. Render fields nested.
-                    forEach (Reflection.FSharpType.GetRecordFields(field.PropertyType)) <| fun field ->
-                        renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
+                    listGroup field [
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> EnterNodeCreationData(formId,nestedVm (FieldList [(0, NotEnteredYet)] )) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
-                    // Is not a DU or record. Render simple field.
-                    genField field None (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
+                    cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
+                    | true -> 
+                        // A field is another DU. Make a nested DU view model.
+                        makeField' (Some field) NotEnteredYet nestedVm field.PropertyType dispatch
+                    | false -> 
+                        // A field is not a DU. 
+                        cond (Reflection.FSharpType.IsRecord(field.PropertyType)) <| function
+                        | true ->
+                            // Is a record. Render fields nested.
+                            forEach (Reflection.FSharpType.GetRecordFields(field.PropertyType)) <| fun field ->
+                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
+                        | false ->
+                            // Is not a DU or record. Render simple field.
+                            genField field None (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
 
     /// Generate form fields corresponding to a nested node view model.
     /// Each level may be a DU, which leads to generation of a select box with case options
@@ -305,9 +395,17 @@ module ViewGen =
                 concat [
                     cond viewModel <| function
                     | NotEnteredYet ->
-                        // Nothing entered yet. Display an empty select box for the case.
-                        // A DU case is not yet selected. Don't display any fields.
-                        genSelect field nestedType "" (fun s -> EnterNodeCreationData(formId,nestedVm(DU(s,NotEnteredYet))) |> dispatch)
+                        if Reflection.FSharpType.GetUnionCases(nestedType).Length <> 1 then
+                            // Nothing entered yet. Display an empty select box for the case.
+                            // A DU case is not yet selected. Don't display any fields.
+                            genSelect field nestedType "" (fun s -> EnterNodeCreationData(formId,nestedVm(DU(s,NotEnteredYet))) |> dispatch)
+                        else 
+                            // There is only one DU case, so skip rendering the choice.
+                            cond (Reflection.FSharpType.GetUnionCases(nestedType) |> Seq.tryFind(fun c -> c.Name = (Reflection.FSharpType.GetUnionCases(nestedType).[0].Name))) <| function
+                            | Some s ->
+                                // None of the fields have any entered values yet. Render all of them cleanly.
+                                forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU((Reflection.FSharpType.GetUnionCases(nestedType).[0].Name), Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId) formId
+                            | None -> empty
                     | DU (selectedCase: string, vm) ->
                         // A DU case is selected. Display its fields for editing.
                         concat [
