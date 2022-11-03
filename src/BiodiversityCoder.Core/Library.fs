@@ -479,6 +479,19 @@ module App =
                         | _ -> empty
                     ]
                 | None -> empty
+                small [] [ text "The time-series is constructed from the following individual dates:" ]
+                ul [] [
+                    forEach (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.ConstructedWithDate |> Seq.map (fun k -> Storage.atomByKey k g)) <| function
+                    | Some dateNode ->
+                            cond (dateNode |> fst |> snd) <| function
+                            | GraphStructure.Node.ExposureNode p ->
+                                cond p <| function
+                                | Exposure.ExposureNode.DateNode d ->
+                                    li [] [ textf "Esimated date of %A from %A. Method was %A. Sample depth was %A." d.TimeEstimate d.MaterialDated.Value d.Date d.SampleDepth ]
+                                | _ -> empty
+                            | _ -> empty
+                    | None -> empty
+                ]
             ]
         ]
 
