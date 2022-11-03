@@ -52,8 +52,8 @@ module Storage =
 
     /// Types that are indexed in a single file rather than individual files.
     let typesToIndex = [ 
-        typeof<Exposure.TemporalIndex.CalYearNode>.Name
-        "ProxiedTaxonNode" ]
+        typeof<Exposure.TemporalIndex.CalYearNode>.Name ]
+        //"ProxiedTaxonNode" ]
 
     let loadIndex directory : Result<NodeIndexItem list,string> =
         loadCacheFile directory indexFile
@@ -169,7 +169,9 @@ module Storage =
 
     /// Fetch a node by it's key
     let atomFriendlyNameByKey<'c> key (graph:FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) =
-        (unwrap graph).NodesByType |> Map.tryFind (typeof<'c>).Name |> Option.bind (Map.tryFind key)
+        //(unwrap graph).NodesByType |> Map.tryFind (typeof<'c>).Name |> Option.bind (Map.tryFind key)
+        // TODO Use index (but not working at the monent?)
+        (unwrap graph).Graph |> Graph.getAtom key |> Option.map(fun n -> (n |> fst |> snd).DisplayName())
 
     /// Fetch a node by it's key
     let atomsByKey<'c> (graph:FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) keys =

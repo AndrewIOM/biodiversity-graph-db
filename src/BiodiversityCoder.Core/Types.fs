@@ -10,6 +10,15 @@ type SimpleValue =
     | Time of TimeOnly
     | Boolean of bool
 
+module Parse =
+
+    let tryParseWith (tryParseFunc: string -> bool * _) = tryParseFunc >> function
+        | true, v    -> Ok v
+        | false, _   -> Error "Parse failed"
+
+    let parseDouble = tryParseWith System.Double.TryParse
+
+
 [<AutoOpen>]
 module Attributes =
 
@@ -119,17 +128,11 @@ module FieldDataTypes =
             | Country   of country:Text.ShortText
             | Arctic
 
-        let tryParseWith (tryParseFunc: string -> bool * _) = tryParseFunc >> function
-            | true, v    -> Ok v
-            | false, _   -> Error "Parse failed"
-
-        let parseDouble = tryParseWith System.Double.TryParse
-
         type Latitude with 
             static member TryCreate s = 
                 match s with 
                 | Number s -> createLatitude s
-                | Text s -> s |> parseDouble |> Result.bind createLatitude
+                | Text s -> s |> Parse.parseDouble |> Result.bind createLatitude
                 | _ -> Error "Not a valid latitude"
                 |> Result.toOption
         
@@ -137,7 +140,7 @@ module FieldDataTypes =
             static member TryCreate s = 
                 match s with 
                 | Number s -> createLongitude s
-                | Text s -> s |> parseDouble |> Result.bind createLongitude
+                | Text s -> s |> Parse.parseDouble |> Result.bind createLongitude
                 | _ -> Error "Not a valid longitude"
                 |> Result.toOption
 
@@ -153,7 +156,13 @@ module FieldDataTypes =
         let createDepth i =
             if i > 0. then Ok (Depth (i * 1.<cm>)) else Error "Depth cannot be negative"
 
-        type Depth with static member TryCreate s = match s with | SimpleValue.Number s -> createDepth s |> Result.toOption | _ -> None
+        type Depth with 
+            static member TryCreate s = 
+                match s with 
+                | Number s -> createDepth s
+                | Text s -> s |> Parse.parseDouble |> Result.bind createDepth
+                | _ -> Error "Not a valid depth"
+                |> Result.toOption
 
 
     [<RequireQualifiedAccess>]

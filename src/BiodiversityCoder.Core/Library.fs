@@ -49,6 +49,7 @@ module App =
             Graph: Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option
             Import: string
             Error: string option
+            FolderLocation: string
             NodeCreationViewModels: Map<string, NodeViewModel>
             NodeCreationValidationErrors: Map<string, (string * string) list>
             NodeCreationRelations: Map<string, string * Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>>
@@ -83,20 +84,13 @@ module App =
         | Exclude of because:Sources.ExclusionReason * notes:FieldDataTypes.Text.Text
 
     let initModel =
-        match Storage.loadOrInitGraph "/Users/andrewmartin/Desktop/test-graph/" with
-        | Ok g ->  
-            match (g.Nodes<Exposure.TemporalIndex.CalYearNode> ()) with
-            | Some _ -> { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = Some g; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
-            | None ->
-                match Storage.seedGraph g with
-                | Ok seeded -> { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = Some seeded; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
-                | Error e -> { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = Some e; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
-        | Error e -> { TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = Some e; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        { FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
 
     type Message =
         | SetPage of Page
         | DismissError
         | SelectFolder
+        | SetFolderManually of string
         | SelectedFolder of string
         | ChangeImportText of string
         | ImportBibtex
@@ -121,6 +115,7 @@ module App =
         | SetPage page -> { model with Page = page }, Cmd.none
         | DismissError -> { model with Error = None }, Cmd.none
         | ChangeImportText s -> { model with Import = s }, Cmd.none
+        | SetFolderManually s -> { model with FolderLocation = s }, Cmd.none
         | ImportBibtex -> 
             match BibtexParser.parse model.Import with
             | Error e -> { model with Error = Some e }, Cmd.none
@@ -161,7 +156,13 @@ module App =
             })
         | SelectedFolder folder ->
             match Storage.loadOrInitGraph folder with
-            | Ok g -> { model with Graph = Some g }, Cmd.none
+            | Ok g ->  
+                match (g.Nodes<Exposure.TemporalIndex.CalYearNode> ()) with
+                | Some _ -> { model with Graph = Some g }, Cmd.none
+                | None ->
+                    match Storage.seedGraph g with
+                    | Ok seeded -> { model with Graph = Some seeded }, Cmd.none
+                    | Error e -> { model with Error = Some e }, Cmd.none
             | Error e -> { model with Error = Some e }, Cmd.none
         | FormMessage m ->
             match m with
@@ -564,7 +565,7 @@ module App =
                                                     ("Parent", [
                                                         ViewGen.RelationsForms.selectExistingNode<Population.Taxonomy.TaxonNode> "The parent taxon" (Population.PopulationRelation.IsA |> GraphStructure.ProposedRelation.Population)
                                                     ])] model.NodeCreationRelations g (FormMessage >> dispatch)
-                                                ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
+                                                ViewGen.makeNodeFormWithRelations<Population.Taxonomy.TaxonNode> (fun savedRelations ->
                                                     ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Population Population.PopulationRelation.IsA) savedRelations)
                                                     (model.NodeCreationViewModels |> Map.tryFind "TaxonNode") [] (FormMessage >> dispatch)
                                             ]
@@ -617,8 +618,10 @@ module App =
                                 errorAlert model dispatch
                                 // No graph is loaded. Connect to a graph folder.
                                 p [] [ text "To get started, please connect the data coding tool to the folder where you are storing the graph database files." ]
-                                label [] [ text "Where is the graph database stored?" ]
-                                button [ _class "btn btn-primary"; on.click (fun _ -> SelectFolder |> dispatch)] [ text "Select folder to connect to." ] ]
+                                label [] [ text "Where is the graph database stored? Enter the folder location here:" ]
+                                input [ _class "form-control"; bind.input.string model.FolderLocation (fun s -> SetFolderManually s |> dispatch) ]
+                                button [ _class "btn btn-primary"; on.click(fun _ -> SelectedFolder model.FolderLocation |> dispatch) ] [ text "Set folder" ]
+                                button [ _class "btn btn-primary"; attr.disabled "disabled"; on.click (fun _ -> SelectFolder |> dispatch)] [ text "Select folder to connect to." ] ]
                             | Some g -> concat [
                                 
                                 div [ _class "card mb-4 text-bg-secondary" ] [

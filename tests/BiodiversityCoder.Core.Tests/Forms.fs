@@ -179,3 +179,22 @@ module ``When converting a view model to an instance`` =
     //             }
     //         Assert.Equal(expected, r :?> SourceNode)
     //     | Error e -> Assert.True(false, e)
+
+module ``When getting relations`` =
+
+    [<Fact>]
+    let works () =
+        let nodeData = Population.Taxonomy.Life |> PopulationNode.TaxonomyNode |> Node.PopulationNode
+        let node = makeUniqueKey nodeData, nodeData
+        let graph =
+            Graph.empty
+            |> Graph.addNode node |> forceOk
+            |> Graph.addRelation (fst node) (fst node) 1 (Population.PopulationRelation.IsA |> GraphStructure.Relation.Population)
+            |> forceOk
+        let atom = graph |> Graph.getAtom (fst node) |> Result.ofOption "" |> forceOk
+        
+        let result =
+            Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.IsA atom
+            |> Seq.tryHead
+        Assert.Equal(result, Some(fst node))
+
