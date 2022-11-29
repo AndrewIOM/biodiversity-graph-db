@@ -36,6 +36,13 @@ module App =
 
     open System.Threading.Tasks
 
+    let sections = 
+        [
+            "source-primary-or-secondary", "Source: Primary of Secondary?"
+            "exposure", "Timelines their spatial contexts (Exposure and Population-Context)"
+            "outcome", "Biodiversity outcomes (Population and Outcomes)"
+        ] |> Map.ofList
+
     type Page =
         | Extract
         | Sources
@@ -52,7 +59,8 @@ module App =
             FolderLocation: string
             NodeCreationViewModels: Map<string, NodeViewModel>
             NodeCreationValidationErrors: Map<string, (string * string) list>
-            NodeCreationRelations: Map<string, string * Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>>
+            NodeCreationRelations: Map<string, string * Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>> // type, selected toggle * Map<relation, node IDs>
+            RelationCreationViewModels: Map<string * string, Map<string,NodeViewModel * GraphStructure.ProposedRelation option>> // proposed is the computed relation. With this, can attempt to link to existing node.
             SelectedSource: SelectedSource option
             TaxonLookup: TaxonomicLookupModel
         }
@@ -67,7 +75,6 @@ module App =
     }
     
     and SelectedSource = {
-        CompletedSections: string list
         MarkedPrimary: IsPrimarySource
         AddingNewSource: bool
         SelectedSource: Graph.Atom<GraphStructure.Node,GraphStructure.Relation>
@@ -75,6 +82,8 @@ module App =
         LinksToPrimarySources: (Graph.UniqueKey * string) option
         Screening: NodeViewModel
         AddBioticHyperedge: Map<Graph.UniqueKey, Graph.UniqueKey option * Graph.UniqueKey option * Graph.UniqueKey option * Graph.UniqueKey option>
+        ProblematicSection: string
+        ProblematicSectionReason: string
     }
 
     and IsPrimarySource = Primary | Secondary | Unknown
@@ -84,7 +93,7 @@ module App =
         | Exclude of because:Sources.ExclusionReason * notes:FieldDataTypes.Text.Text
 
     let initModel =
-        { FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        { RelationCreationViewModels = Map.empty; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
 
     type Message =
         | SetPage of Page
@@ -104,6 +113,8 @@ module App =
         | ToggleConnectNewOrExistingSource
         | ChangeProposedSourceLink of Graph.UniqueKey option
         | CompleteSection of string
+        | ChangeCodingProblem of string * string
+        | SubmitCodingProblem
 
     and LookupTaxonMessage =
         | ChangeFormFields of TaxonomicLookupModel
@@ -147,7 +158,7 @@ module App =
             | Some g ->
                 match g |> Storage.atomByKey k with
                 | Some atom -> 
-                    { model with SelectedSource = Some { CompletedSections = []; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                    { model with SelectedSource = Some { ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                 | None -> { model with Error = Some <| sprintf "Could not find source with key %s [%A]" k.AsString k }, Cmd.none
         | SelectFolder ->
             model, Cmd.OfAsync.result(async {
@@ -206,10 +217,10 @@ module App =
                                 | GraphStructure.Node.SourceNode s ->
                                     match s with
                                     | Sources.SourceNode.Excluded (s,_,_)
-                                    | Sources.SourceNode.Included s
+                                    | Sources.SourceNode.Included (s,_)
                                     | Sources.SourceNode.Unscreened s ->
                                         match (node :?> EligbilityCriteria) with
-                                        | Include -> Sources.SourceNode.Included s |> Ok
+                                        | Include -> Sources.SourceNode.Included (s,Sources.CompletedNone) |> Ok
                                         | Exclude (because, notes) -> Sources.SourceNode.Excluded (s, because, notes) |> Ok
                                 | _ -> Error "No source was selected"
                             Create.createFromViewModel nodeType source.Screening
@@ -237,7 +248,7 @@ module App =
                                         |> Option.map(fun (_,rels) -> rels |> Map.map(fun k v -> v |> Seq.map(fun _ -> k)) |> Map.toSeq |> Seq.collect snd)
                                         |> Option.map validateRelations
                                     match check with
-                                    | Some b -> if b then Ok () else Error "Did not have required relations"
+                                    | Some b -> if b then Ok () else Error "You have not entered all required details (relations)"
                                     | None -> Ok ()
 
                                 // Is a normal new graph node:
@@ -270,13 +281,26 @@ module App =
                             | None -> { model with Error = Some "Cannot make node as graph is not loaded." }, Cmd.none
                     | None -> { model with Error = Some (sprintf "Could not find type of %s" nodeType.Name) }, Cmd.none
             | EnterNodeRelationData(nodeType, toggleset, proposed, sinkKeys) -> 
-                let x =
+                let x, y =
                     match model.NodeCreationRelations |> Map.tryFind nodeType with
-                    | Some (toggleset, existing) -> model.NodeCreationRelations |> Map.add nodeType (toggleset, existing |> Map.add proposed sinkKeys)
-                    | None -> model.NodeCreationRelations |> Map.add nodeType (toggleset, Map.ofList [proposed, sinkKeys])
-                { model with NodeCreationRelations = x }, Cmd.none
+                    | Some (toggleset, existing) -> 
+                        if sinkKeys.IsEmpty 
+                        then model.NodeCreationRelations |> Map.add nodeType (toggleset, existing |> Map.remove proposed), model.RelationCreationViewModels |> Map.remove (nodeType, toggleset)
+                        else model.NodeCreationRelations |> Map.add nodeType (toggleset, existing |> Map.add proposed sinkKeys), model.RelationCreationViewModels
+                    | None -> model.NodeCreationRelations |> Map.add nodeType (toggleset, Map.ofList [proposed, sinkKeys]), model.RelationCreationViewModels
+                { model with NodeCreationRelations = x; RelationCreationViewModels = y }, Cmd.none
+            | EnterRelationCreationData(nodeType, toggle, name, vm, proposed) -> 
+                let updatedVm = 
+                    match model.RelationCreationViewModels |> Map.tryFind (nodeType,toggle) with
+                    | Some existing -> 
+                        match existing |> Map.tryFind name with
+                        | Some (formData, _) -> existing |> Map.add name (Merge.updateNodeViewModel formData vm, proposed)
+                        | None -> existing |> Map.add name (Merge.updateNodeViewModel NotEnteredYet vm, proposed)
+                    | None -> Map.empty |> Map.add name (Merge.updateNodeViewModel NotEnteredYet vm, proposed)
+                { model with RelationCreationViewModels = model.RelationCreationViewModels |> Map.add (nodeType,toggle) updatedVm }, Cmd.none
             | ChangeNodeRelationToggle(nodeType, toggle) ->
-                { model with NodeCreationRelations = model.NodeCreationRelations |> Map.add nodeType (toggle, Map.empty) }, Cmd.none
+                { model with NodeCreationRelations = model.NodeCreationRelations |> Map.add nodeType (toggle, Map.empty)
+                             RelationCreationViewModels = model.RelationCreationViewModels |> Map.filter(fun k _ -> fst k <> nodeType) }, Cmd.none
         | LookupTaxon l ->
             match l with
             | ChangeFormFields f -> 
@@ -411,9 +435,76 @@ module App =
                 | Some s -> { model with SelectedSource = Some { s with MarkedPrimary = is } }, Cmd.none
                 | None -> model, Cmd.none
         | CompleteSection section ->
+            match model.Graph with
+            | Some g ->
+                match model.SelectedSource with
+                | Some source ->
+                    let allSectionsComplete (completed:FieldDataTypes.Text.ShortText list) =
+                        let diff = Set.difference (Set.ofSeq (sections |> Map.keys)) (Set.ofList (completed |> List.map(fun s -> s.Value)))
+                        diff.IsEmpty
+                    let updateSource section =
+                        match source.SelectedSource |> fst |> snd with
+                        | GraphStructure.Node.SourceNode s ->
+                            match s with
+                            | Sources.SourceNode.Included (s,progress) ->
+                                match progress with
+                                | Sources.CodingProgress.CompletedAll -> (s, progress) |> Sources.Included |> Ok
+                                | Sources.CodingProgress.CompletedNone -> 
+                                    if allSectionsComplete [section]
+                                    then (s, Sources.CodingProgress.CompletedAll) |> Sources.Included |> Ok
+                                    else (s, Sources.CodingProgress.InProgress [section]) |> Sources.Included |> Ok
+                                | Sources.CodingProgress.InProgress completed -> 
+                                    if allSectionsComplete ((section :: completed) |> List.distinct)
+                                    then (s, Sources.CodingProgress.CompletedAll) |> Sources.Included |> Ok
+                                    else (s, Sources.CodingProgress.InProgress ((section :: completed) |> List.distinct)) |> Sources.Included |> Ok
+                                | Sources.CodingProgress.Stalled (completed,stalledSection,reason) -> 
+                                    if stalledSection = section then 
+                                        if allSectionsComplete ((section :: completed) |> List.distinct)
+                                        then (s, Sources.CompletedAll) |> Sources.Included |> Ok
+                                        else (s, Sources.InProgress ((section :: completed) |> List.distinct)) |> Sources.Included |> Ok
+                                    else (s, (Sources.Stalled (((section :: completed) |> List.distinct),stalledSection,reason))) |> Sources.Included |> Ok
+                            | _ -> Error "Cannot complete section on non-included sources"
+                        | _ -> Error "No source was selected"
+                    FieldDataTypes.Text.createShort section
+                    |> Result.bind updateSource
+                    |> Result.lift GraphStructure.Node.SourceNode
+                    |> Result.bind (fun n -> Storage.updateNode g (source.SelectedSource |> fst |> fst, n))
+                    |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                    |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
+                | None -> { model with Error = Some "Cannot modify source as graph is not loaded." }, Cmd.none
+            | None -> model, Cmd.none
+        | ChangeCodingProblem(section, reason) ->
             match model.SelectedSource with
-                | Some s -> { model with SelectedSource = Some { s with CompletedSections = section :: s.CompletedSections } }, Cmd.none
-                | None -> model, Cmd.none
+            | Some s -> { model with SelectedSource = Some { s with ProblematicSection = section; ProblematicSectionReason = reason } }, Cmd.none
+            | None -> model, Cmd.none
+        | SubmitCodingProblem ->
+            match model.Graph with
+            | Some g ->
+                match model.SelectedSource with
+                | Some source ->
+                    // Update the source node and save it.
+                    let updateSource problemSection problemReason =
+                        match source.SelectedSource |> fst |> snd with
+                        | GraphStructure.Node.SourceNode s ->
+                            match s with
+                            | Sources.SourceNode.Included (s,progress) ->
+                                match progress with
+                                | Sources.CodingProgress.CompletedAll -> Error "Cannot flag when all completed"
+                                | Sources.CodingProgress.CompletedNone -> (s, Sources.CodingProgress.Stalled ([], problemSection, problemReason)) |> Sources.Included |> Ok
+                                | Sources.CodingProgress.InProgress completed
+                                | Sources.CodingProgress.Stalled (completed,_,_) -> 
+                                    if completed |> Seq.contains problemSection then Error "Cannot flag a completed section"
+                                    else (s, Sources.CodingProgress.Stalled (completed, problemSection, problemReason)) |> Sources.Included |> Ok
+                            | _ -> Error "Cannot complete section on non-included sources"
+                        | _ -> Error "No source was selected"
+                    (updateSource <!> (FieldDataTypes.Text.createShort source.ProblematicSection) <*> (FieldDataTypes.Text.create source.ProblematicSectionReason))
+                    |> Result.bind id
+                    |> Result.lift GraphStructure.Node.SourceNode
+                    |> Result.bind (fun n -> Storage.updateNode g (source.SelectedSource |> fst |> fst, n))
+                    |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                    |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
+                | None -> { model with Error = Some "Cannot modify source as graph is not loaded." }, Cmd.none
+            | None -> model, Cmd.none
 
 
     let _class = attr.``class``
@@ -454,11 +545,11 @@ module App =
                         cond timeline <| function
                         | Exposure.StudyTimeline.Continuous res ->
                             cond res <| function
-                            | Exposure.StudyTimeline.Regular r -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A continuous timeline with %A year timesteps" r ]
+                            | Exposure.StudyTimeline.Regular (r,g) -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A continuous timeline with %A year timesteps (formed using %A)" r g ]
                             | Exposure.StudyTimeline.Irregular -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A continuous timeline with irregular timesteps" ]
                         | Exposure.StudyTimeline.Discontinuous (res,_) ->
                             cond res <| function
-                            | Exposure.StudyTimeline.Regular r -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A discontinuous timeline with %A year timesteps" r ]
+                            | Exposure.StudyTimeline.Regular (r,g) -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A continuous timeline with %A year timesteps (formed using %A)" r g ]
                             | Exposure.StudyTimeline.Irregular -> h6 [ _class "card-subtitle mb-2 text-muted" ] [ textf "A discontinuous timeline with irregular timesteps" ]
                     | _ -> empty
                 | _ -> empty
@@ -469,12 +560,15 @@ module App =
                         | GraphStructure.Node.PopulationNode p ->
                             cond p <| function
                             | GraphStructure.ContextNode c ->
-                                cond c.SamplingLocation <| function
-                                | FieldDataTypes.Geography.Site (lat,lon) -> textf "Occurs at the point %A DD, %A, DD" lat lon
-                                | FieldDataTypes.Geography.Locality (l,d,r,c) -> textf "Occurs at the locality %s (%s, %s, %s)" l.Value d.Value r.Value c.Value
-                                | FieldDataTypes.Geography.Region (r,c) -> textf "Occurs in the region %s (%s)" r.Value c.Value
-                                | FieldDataTypes.Geography.Country (c) -> textf "Occurs in the country %s" c.Value
-                                | _ -> textf "Occurs at %s." c.Name.Value
+                                concat [
+                                    textf "%s. " c.Name.Value
+                                    cond c.SamplingLocation <| function
+                                    | FieldDataTypes.Geography.Site (lat,lon) -> textf "Occurs at the point %A DD, %A, DD" lat lon
+                                    | FieldDataTypes.Geography.Locality (l,d,r,c) -> textf "Occurs at the locality %s (%s, %s, %s)" l.Value d.Value r.Value c.Value
+                                    | FieldDataTypes.Geography.Region (r,c) -> textf "Occurs in the region %s (%s)" r.Value c.Value
+                                    | FieldDataTypes.Geography.Country (c) -> textf "Occurs in the country %s" c.Value
+                                    | _ -> textf "Occurs at %s." c.Name.Value
+                                ]
                             | _ -> empty
                         | _ -> empty
                     ]
@@ -487,13 +581,51 @@ module App =
                             | GraphStructure.Node.ExposureNode p ->
                                 cond p <| function
                                 | Exposure.ExposureNode.DateNode d ->
-                                    li [] [ textf "Esimated date of %A from %A. Method was %A. Sample depth was %A." d.TimeEstimate d.MaterialDated.Value d.Date d.SampleDepth ]
+                                    li [] [ textf "Esimated date from %A (depth %A). Method was %A." d.MaterialDated.Value d.SampleDepth d.Date ]
                                 | _ -> empty
                             | _ -> empty
                     | None -> empty
                 ]
             ]
         ]
+
+    let private removeUnit (x:float<_>) = float x
+
+    /// Lookup time to find if there is a calendar year node corresponding to that year in the
+    /// graph database.
+    let trySelectTimeNode (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) (value:FieldDataTypes.OldDate.OldDate) =
+        let v =
+            match value with
+            | FieldDataTypes.OldDate.OldDate.CalYrBP (f, _) -> removeUnit f
+            | FieldDataTypes.OldDate.OldDate.HistoryYearAD f -> 1950. - removeUnit f
+            | FieldDataTypes.OldDate.OldDate.HistoryYearBC f -> removeUnit f + 1950.
+            | FieldDataTypes.OldDate.OldDate.BP f -> removeUnit f
+        let nearestYear = System.Math.Round(v) |> int
+        let key = Graph.UniqueKey.FriendlyKey("calyearnode",sprintf "%iybp" nearestYear)
+        graph.Nodes<Exposure.TemporalIndex.CalYearNode>()
+        |> Option.bind(fun n -> if Map.containsKey key n then Some (key, value) else None)
+
+    /// Tests if a section is marked as complete on a source
+    let isCompletedSection name codingStatus =
+        match codingStatus with
+        | Sources.CodingProgress.CompletedAll -> true
+        | Sources.CodingProgress.CompletedNone -> false
+        | Sources.CodingProgress.InProgress l -> l |> Seq.map (fun l -> l.Value) |> Seq.contains name
+        | Sources.CodingProgress.Stalled (l,_,_) -> l |> Seq.map (fun l -> l.Value) |> Seq.contains name
+
+    let isFlaggable codingStatus =
+        match codingStatus with
+        | Sources.CodingProgress.CompletedAll -> false
+        | _ -> true
+
+    let codingStatusView codingStatus =
+        cond codingStatus <| function
+        | Sources.CodingProgress.CompletedAll -> div [ _class "alert alert-success" ] [ text "Data coding is complete for this source" ]
+        | Sources.CodingProgress.CompletedNone
+        | Sources.CodingProgress.InProgress _ -> p [] [ text "Data coding is not yet complete for this source" ]
+        | Sources.CodingProgress.Stalled (_,s,r) ->
+            div [ _class "alert alert-warning" ] [ 
+                textf "A problem has been flagged when coding this source, which needs to be resolved. %s (section: %s)." r.Value s.Value ]
 
 
     let view model dispatch =
@@ -576,7 +708,7 @@ module App =
                                         | Some g -> concat [
                                                 ViewGen.RelationsForms.relationsToggle<Population.Taxonomy.TaxonNode> "Parent taxon" [
                                                     ("Parent", [
-                                                        ViewGen.RelationsForms.selectExistingNode<Population.Taxonomy.TaxonNode> "The parent taxon" (Population.PopulationRelation.IsA |> GraphStructure.ProposedRelation.Population)
+                                                        ViewGen.RelationsForms.selectExistingNode<Population.Taxonomy.TaxonNode> "The parent taxon" "The taxon of the rank immediately above the desired new taxon. Example: the order 'Procellariiformes' for the family 'Procellariidae'." (Population.PopulationRelation.IsA |> GraphStructure.ProposedRelation.Population)
                                                     ])] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                 ViewGen.makeNodeFormWithRelations<Population.Taxonomy.TaxonNode> (fun savedRelations ->
                                                     ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Population Population.PopulationRelation.IsA) savedRelations)
@@ -694,92 +826,111 @@ module App =
                                                 text "This source has been excluded at full-text level."
                                                 textf "The reason stated was: %s" (reason.ToString())
                                                 text notes.Value ]
-                                        | Sources.SourceNode.Included s -> concat [
-                                            div [ _class "alert alert-success" ] [ text "This source has been included at full-text level. Please code information as stated below." ]
+                                        | Sources.SourceNode.Included (s,codingStatus) -> concat [
+                                            div [ _class "card mb-4" ] [
+                                                div [ _class "card-header text-bg-secondary" ] [ text "Source Status: Included" ]
+                                                div [ _class "card-body" ] [
+                                                    div [ _class "alert alert-success" ] [ text "This source has been included at full-text level. Please code information as stated below." ]
+                                                    codingStatusView codingStatus
+                                                ]
+                                            ]
                                             div [ _class "card mb-4" ] [
                                                 div [ _class "card-header text-bg-secondary" ] [ text "Q: Is it a primary or secondary source?" ]
                                                 div [ _class "card-body" ] [
                                                     p [] [ 
                                                         text "A source may be 'secondary' if it does not contain any new information, but references information in other publications."
                                                         text "You can link this source to the primary sources by selecting an existing source, or adding a new one. Please check that the source does not already exist before creating a new one." ]
-                                                    cond source.MarkedPrimary <| function
-                                                    | Unknown ->
-                                                        concat [
-                                                            div [ _class "row g-3" ] [
-                                                                div [ _class "col-md-3" ] [
-                                                                    label [] [ text "Is this a primary source?" ]
-                                                                ]
-                                                                div [ _class "col-md-9" ] [
-                                                                    button [ _class "btn btn-secondary mr-2"; on.click(fun _ -> MarkPrimary Primary |> dispatch) ] [ text "Primary source" ]
-                                                                    button [ _class "btn btn-secondary"; on.click(fun _ -> MarkPrimary Secondary |> dispatch) ] [ text "Secondary source" ]
-                                                                ]
+                                                    cond (isCompletedSection "source-primary-or-secondary" codingStatus) <| function
+                                                    | true -> concat [
+                                                        div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the primary / secondary source question." ]
+                                                        div [ _class "row g-3" ] [
+                                                            div [ _class "col-md-3" ] [
+                                                                label [] [ text "Linked sources" ]
                                                             ]
-                                                        ]
-                                                    | Primary
-                                                    | Secondary ->
-                                                        cond source.AddingNewSource <| function
-                                                        | false -> 
+                                                            div [ _class "col-md-6" ] [
+                                                                forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.UsesPrimarySource |> Storage.atomsByKey g ) <| fun linkedSource ->
+                                                                    p [] [ textf "%A" (linkedSource |> fst |> snd) ]
+                                                            ]
+                                                        ] ]
+                                                    | false ->
+                                                        cond source.MarkedPrimary <| function
+                                                        | Unknown ->
                                                             concat [
                                                                 div [ _class "row g-3" ] [
                                                                     div [ _class "col-md-3" ] [
                                                                         label [] [ text "Is this a primary source?" ]
                                                                     ]
-                                                                    div [ _class "col-md-9" ] [ 
-                                                                            cond source.MarkedPrimary <| function
-                                                                            | Primary -> text "Yes. This source is a primary source, but may also be linked to other sources."
-                                                                            | Secondary -> text "No. This is only a secondary source."
-                                                                            | _ -> empty
-                                                                        ]
-                                                                ]
-                                                                div [ _class "row g-3" ] [
-                                                                    div [ _class "col-md-3" ] [
-                                                                        label [] [ text "Linked sources" ]
-                                                                    ]
-                                                                    div [ _class "col-md-6" ] [
-                                                                        forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.UsesPrimarySource |> Storage.atomsByKey g ) <| fun linkedSource ->
-                                                                            p [] [ textf "%A" (linkedSource |> fst |> snd) ]
+                                                                    div [ _class "col-md-9" ] [
+                                                                        button [ _class "btn btn-secondary mr-2"; on.click(fun _ -> MarkPrimary Primary |> dispatch) ] [ text "Primary source" ]
+                                                                        button [ _class "btn btn-secondary"; on.click(fun _ -> MarkPrimary Secondary |> dispatch) ] [ text "Secondary source" ]
                                                                     ]
                                                                 ]
-                                                                cond (source.CompletedSections |> Seq.contains "primary-or-secondary") <| function
-                                                                | true -> div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the primary / secondary source question." ]
-                                                                | false -> concat [
+                                                            ]
+                                                        | Primary
+                                                        | Secondary ->
+                                                            cond source.AddingNewSource <| function
+                                                            | false -> 
+                                                                concat [
                                                                     div [ _class "row g-3" ] [
                                                                         div [ _class "col-md-3" ] [
-                                                                            label [] [ text "Link to another primary source" ]
+                                                                            label [] [ text "Is this a primary source?" ]
+                                                                        ]
+                                                                        div [ _class "col-md-9" ] [ 
+                                                                                cond source.MarkedPrimary <| function
+                                                                                | Primary -> text "Yes. This source is a primary source, but may also be linked to other sources."
+                                                                                | Secondary -> text "No. This is only a secondary source."
+                                                                                | _ -> empty
+                                                                            ]
+                                                                    ]
+                                                                    div [ _class "row g-3" ] [
+                                                                        div [ _class "col-md-3" ] [
+                                                                            label [] [ text "Linked sources" ]
                                                                         ]
                                                                         div [ _class "col-md-6" ] [
-                                                                            select [ _class "form-select"; bind.change.string (if source.ProposedLink.IsSome then source.ProposedLink.Value.AsString else "") 
-                                                                                (fun s -> s |> Graph.stringToKey |> Some |> ChangeProposedSourceLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
-                                                                        ]
-                                                                        div [ _class "col-md-3" ] [
-                                                                            button [ attr.disabled source.ProposedLink.IsNone; _class "btn btn-primary"; on.click(
-                                                                                fun _ -> RelateNodes(
-                                                                                    source.SelectedSource |> fst |> fst, 
-                                                                                    source.ProposedLink.Value, 
-                                                                                    Sources.SourceRelation.UsesPrimarySource |> GraphStructure.ProposedRelation.Source) 
-                                                                                        |> FormMessage |> dispatch; ChangeProposedSourceLink None |> dispatch) ] [ text "Link" ]
+                                                                            forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.UsesPrimarySource |> Storage.atomsByKey g ) <| fun linkedSource ->
+                                                                                p [] [ textf "%A" (linkedSource |> fst |> snd) ]
                                                                         ]
                                                                     ]
-                                                                    div [ _class "row g-3" ] [
-                                                                        div [ _class "col-md-3" ] [
-                                                                            label [] [ text "...or add a source not yet listed" ]
+                                                                    cond (isCompletedSection "source-primary-or-secondary" codingStatus) <| function
+                                                                    | true -> div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the primary / secondary source question." ]
+                                                                    | false -> concat [
+                                                                        div [ _class "row g-3" ] [
+                                                                            div [ _class "col-md-3" ] [
+                                                                                label [] [ text "Link to another primary source" ]
+                                                                            ]
+                                                                            div [ _class "col-md-6" ] [
+                                                                                select [ _class "form-select"; bind.change.string (if source.ProposedLink.IsSome then source.ProposedLink.Value.AsString else "") 
+                                                                                    (fun s -> s |> Graph.stringToKey |> Some |> ChangeProposedSourceLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                            ]
+                                                                            div [ _class "col-md-3" ] [
+                                                                                button [ attr.disabled source.ProposedLink.IsNone; _class "btn btn-primary"; on.click(
+                                                                                    fun _ -> RelateNodes(
+                                                                                        source.SelectedSource |> fst |> fst, 
+                                                                                        source.ProposedLink.Value, 
+                                                                                        Sources.SourceRelation.UsesPrimarySource |> GraphStructure.ProposedRelation.Source) 
+                                                                                            |> FormMessage |> dispatch; ChangeProposedSourceLink None |> dispatch) ] [ text "Link" ]
+                                                                            ]
                                                                         ]
-                                                                        div [ _class "col-md-6" ] []
-                                                                        div [ _class "col-md-3" ] [
-                                                                            button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
+                                                                        div [ _class "row g-3" ] [
+                                                                            div [ _class "col-md-3" ] [
+                                                                                label [] [ text "...or add a source not yet listed" ]
+                                                                            ]
+                                                                            div [ _class "col-md-6" ] []
+                                                                            div [ _class "col-md-3" ] [
+                                                                                button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
+                                                                            ]
                                                                         ]
+                                                                        hr []
+                                                                        button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "source-primary-or-secondary" |> dispatch) ] [ text "I've finished this question" ]
                                                                     ]
-                                                                    hr []
-                                                                    button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "primary-or-secondary" |> dispatch) ] [ text "I've finished this question" ]
                                                                 ]
-                                                            ]
-                                                        | true -> 
-                                                            concat [
-                                                                ViewGen.makeNodeForm<Sources.SourceNode> (model.NodeCreationViewModels |> Map.tryFind "SourceNode") [
-                                                                    ThisIsSink ((source.SelectedSource |> fst |> fst), GraphStructure.ProposedRelation.Source(Sources.SourceRelation.UsesPrimarySource))
-                                                                ] (FormMessage >> dispatch)
-                                                                button [ _class "btn btn-danger"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Back (discard)" ]
-                                                            ]
+                                                            | true -> 
+                                                                concat [
+                                                                    ViewGen.makeNodeForm<Sources.SourceNode> (model.NodeCreationViewModels |> Map.tryFind "SourceNode") [
+                                                                        ThisIsSink ((source.SelectedSource |> fst |> fst), GraphStructure.ProposedRelation.Source(Sources.SourceRelation.UsesPrimarySource))
+                                                                    ] (FormMessage >> dispatch)
+                                                                    button [ _class "btn btn-danger"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Back (discard)" ]
+                                                                ]
                                                     ]
                                             ] // end primary / secondary card.
 
@@ -801,7 +952,7 @@ module App =
                                                                 div [ _class "card-header" ] [ text ((timelineAtom |> fst |> snd).DisplayName()) ]
                                                                 div [ _class "card-body" ] [
                                                                     timelineAtomDetailsView timelineAtom g
-                                                                    cond (source.CompletedSections |> Seq.contains "timeline") <| function
+                                                                    cond (isCompletedSection "exposure" codingStatus) <| function
                                                                     | true -> empty
                                                                     | false ->
                                                                         concat [
@@ -836,7 +987,21 @@ module App =
                                                                                 div [ _class "card mb-4"] [
                                                                                     div [ _class "card-header" ] [ text "Add a date" ]
                                                                                     div [ _class "card-body" ] [
-                                                                                        ViewGen.makeNodeForm<Exposure.StudyTimeline.IndividualDateNode> (model.NodeCreationViewModels |> Map.tryFind "IndividualDateNode") [
+                                                                                        ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualDateNode> "Expression of time" [
+                                                                                            ("Zone or Qualitative", [
+                                                                                                ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" "Use if the dating method indicates a connection to a qualitative period. Example: peat deposit occurs within a locally-defined pollen zone." (Exposure.ExposureRelation.OccursWithin |> GraphStructure.ProposedRelation.Exposure)
+                                                                                            ])
+                                                                                            ("Absolute", [
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Estimated date (as stated by the authors)" "You may select a date in one of three units: BP, cal yr BP, or AD/BC (calendar year)." (Exposure.ExposureRelation.TimeEstimate >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Uncertainty: earliest date (as stated by the authors)" "Optional. If an uncertainty range has been given for the date, enter the earliest stated date here." (Exposure.ExposureRelation.UncertaintyOldest >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Uncertainty: latest date (as stated by the authors)" "Optional. Enter the latest stated date here." (Exposure.ExposureRelation.UncertaintyYoungest >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                            ])
+                                                                                        ] model.NodeCreationRelations g (FormMessage >> dispatch)
+                                                                                        ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualDateNode> (fun savedRelations ->
+                                                                                            //(ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.OccursWithin) savedRelations)
+                                                                                            //|| 
+                                                                                            (ViewGen.RelationsForms.Validation.hasOneByCase "TimeEstimate" savedRelations)
+                                                                                        ) (model.NodeCreationViewModels |> Map.tryFind "IndividualDateNode") [
                                                                                             ThisIsSink ((timelineAtom |> fst |> fst), Exposure.ExposureRelation.ConstructedWithDate |> GraphStructure.ProposedRelation.Exposure)
                                                                                         ] (FormMessage >> dispatch)
                                                                                     ]
@@ -847,7 +1012,7 @@ module App =
                                                                 ]
                                                             ] // end viewing of a temporal extent.
                                                         hr []
-                                                        cond (source.CompletedSections |> Seq.contains "timeline") <| function
+                                                        cond (isCompletedSection "exposure" codingStatus) <| function
                                                         | true -> div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the timelines section." ]
                                                         | false -> concat [
                                                             // Add another temporal extent.
@@ -857,15 +1022,15 @@ module App =
                                                                     p [] [ text "When defining a timeline by start and end dates, you may optionally enter uncertainty values. These are not required if not available." ]
                                                                     ViewGen.RelationsForms.relationsToggle<Exposure.StudyTimeline.IndividualTimelineNode> "Expression of time" [
                                                                         ("Qualitative", [
-                                                                            ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
+                                                                            ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" "" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
                                                                         ])
                                                                         ("Year", [
-                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date" (Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) 
-                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date uncertainty (older bound)" (Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure)
-                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: oldest date uncertainty (younger bound)" (Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure)
-                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date" (Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure)
-                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date uncertainty (older bound)" (Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure)
-                                                                            ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Temporal extent: youngest date uncertainty (younger bound)" (Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure)
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: oldest date" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: oldest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: oldest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: latest date" "" (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: latest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: latest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
                                                                         ])
                                                                     ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                     ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
@@ -878,7 +1043,7 @@ module App =
                                                                 ]
                                                             ]
                                                             hr []
-                                                            button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "timeline" |> dispatch) ] [ text "I've finished coding timelines" ]
+                                                            button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "exposure" |> dispatch) ] [ text "I've finished coding timelines" ]
                                                         ]
                                                     ]
                                             ] // end timelines card.
@@ -901,70 +1066,100 @@ module App =
                                                         ]
                                                     ]
 
-                                                    // 3. For each study timeline, add proxied taxa.
-                                                    forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timelineAtom ->
-                                                        // Display existing and add new proxied taxa
-                                                        // Proxied taxa are related to an outcome too.
-                                                        concat [
-                                                            h4 [] [ text ((timelineAtom |> fst |> snd).DisplayName())]
-                                                            hr []
-                                                            timelineAtomDetailsView timelineAtom g
-                                                            div [] [
-                                                                table [ _class "table" ] [
-                                                                    thead [] [
-                                                                        tr [] [
-                                                                            th [ attr.scope "column" ] [ text "Biotic Proxy" ]
-                                                                            th [ attr.scope "column" ] [ text "Inference Method" ]
-                                                                            th [ attr.scope "column" ] [ text "Botanical Taxon / Taxa" ]
-                                                                            th [ attr.scope "column" ] [ text "Measured by" ]
-                                                                            th [ attr.scope "column" ] [ text "Actions" ]
-                                                                        ]
-                                                                    ]
-                                                                    tbody [] [
-                                                                        // Add a new proxied taxon and outcome measure.
-                                                                        tr [] [        
-                                                                            cond (source.AddBioticHyperedge |> Map.tryFind (timelineAtom |> fst |> fst)) <| function
-                                                                            | Some (proxy,infer,taxon,outcome) -> concat [
-                                                                                td [] [ select [ _class "form-select"; bind.change.string (if proxy.IsSome then proxy.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),infer,taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
-                                                                                td [] [ select [ _class "form-select"; bind.change.string (if infer.IsSome then infer.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,Some (Graph.stringToKey s),taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                                td [] [ select [ _class "form-select"; bind.change.string (if taxon.IsSome then taxon.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (Graph.stringToKey s),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
-                                                                                td [] [ select [ _class "form-select"; bind.change.string (if outcome.IsSome then outcome.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,taxon,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
-                                                                            | None -> concat [
-                                                                                td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),None,None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
-                                                                                td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                                td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,Some (Graph.stringToKey s),None) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
-                                                                                td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
-                                                                            td [] [
-                                                                                button [ _class "btn btn-primary"; on.click (fun _ -> SubmitProxiedTaxon (timelineAtom |> fst |> fst) |> dispatch) ] [ text "Save" ]
+                                                    cond (isCompletedSection "outcome" codingStatus) <| function
+                                                    | true -> div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the outcomes section." ]
+                                                    | false ->
+                                                        // 3. For each study timeline, add proxied taxa.
+                                                        forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timelineAtom ->
+                                                            // Display existing and add new proxied taxa
+                                                            // Proxied taxa are related to an outcome too.
+                                                            concat [
+                                                                h4 [] [ text ((timelineAtom |> fst |> snd).DisplayName())]
+                                                                hr []
+                                                                timelineAtomDetailsView timelineAtom g
+                                                                div [] [
+                                                                    table [ _class "table" ] [
+                                                                        thead [] [
+                                                                            tr [] [
+                                                                                th [ attr.scope "column" ] [ text "Biotic Proxy" ]
+                                                                                th [ attr.scope "column" ] [ text "Inference Method" ]
+                                                                                th [ attr.scope "column" ] [ text "Taxon / Taxa" ]
+                                                                                th [ attr.scope "column" ] [ text "Measured by" ]
+                                                                                th [ attr.scope "column" ] [ text "Actions" ]
                                                                             ]
                                                                         ]
-                                                                        forEach (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.HasProxyInfo |> Storage.atomsByKey g ) <| fun proxiedTaxonEdge -> concat [
-                                                                            cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredFrom |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
-                                                                            | Some proxyName ->
-                                                                                cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredUsing |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
-                                                                                | Some methodName ->
-                                                                                    cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredAs |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
-                                                                                    | Some taxonName ->
-                                                                                        cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.MeasuredBy |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
-                                                                                        | Some outcome ->
-                                                                                        tr [] [
-                                                                                            td [] [ text proxyName ]
-                                                                                            td [] [ text methodName ]
-                                                                                            td [] [ text taxonName ]
-                                                                                            td [] [ text outcome ]
-                                                                                            td [] []
-                                                                                        ]
-                                                                                        | None -> text "None A"
-                                                                                    | None -> text "None B"
-                                                                                | None -> text "None C"
-                                                                            | None -> textf "Proxy relation: %A" proxiedTaxonEdge
+                                                                        tbody [] [
+                                                                            // Add a new proxied taxon and outcome measure.
+                                                                            tr [] [        
+                                                                                cond (source.AddBioticHyperedge |> Map.tryFind (timelineAtom |> fst |> fst)) <| function
+                                                                                | Some (proxy,infer,taxon,outcome) -> concat [
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string (if proxy.IsSome then proxy.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),infer,taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string (if infer.IsSome then infer.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,Some (Graph.stringToKey s),taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string (if taxon.IsSome then taxon.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (Graph.stringToKey s),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string (if outcome.IsSome then outcome.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,taxon,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
+                                                                                | None -> concat [
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),None,None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,Some (Graph.stringToKey s),None) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
+                                                                                td [] [
+                                                                                    button [ _class "btn btn-primary"; on.click (fun _ -> SubmitProxiedTaxon (timelineAtom |> fst |> fst) |> dispatch) ] [ text "Save" ]
+                                                                                ]
+                                                                            ]
+                                                                            forEach (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.HasProxyInfo |> Storage.atomsByKey g ) <| fun proxiedTaxonEdge -> concat [
+                                                                                cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredFrom |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                                | Some proxyName ->
+                                                                                    cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredUsing |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                                    | Some methodName ->
+                                                                                        cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredAs |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                                        | Some taxonName ->
+                                                                                            cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.MeasuredBy |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                                            | Some outcome ->
+                                                                                            tr [] [
+                                                                                                td [] [ text proxyName ]
+                                                                                                td [] [ text methodName ]
+                                                                                                td [] [ text taxonName ]
+                                                                                                td [] [ text outcome ]
+                                                                                                td [] []
+                                                                                            ]
+                                                                                            | None -> text "None A"
+                                                                                        | None -> text "None B"
+                                                                                    | None -> text "None C"
+                                                                                | None -> textf "Proxy relation: %A" proxiedTaxonEdge
+                                                                            ]
                                                                         ]
-                                                                    ]
-                                                                ] // end proxied taxa table
+                                                                    ] // end proxied taxa table
+                                                                ]
+                                                                hr []
+                                                                button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "outcome" |> dispatch) ] [ text "I've finished coding outcomes" ]
                                                             ]
-                                                        ]
                                                 ]
                                             ] // end outcomes card
+
+                                            cond (isFlaggable codingStatus) <| function
+                                            | true ->
+                                                div [ _class "card mb-4" ] [
+                                                    div [ _class "card-header text-bg-secondary" ] [ text "I can't complete this source now..." ]
+                                                    div [ _class "card-body" ] [
+                                                        p [] [ text "If you can't complete this source now, please state the section that you're having problems with and state a reason." ]
+                                                        div [ _class "row mb-3" ] [
+                                                            label [ _class "col-sm-2 col-form-label" ] [ text "I can't complete this section" ]
+                                                            div [ _class "col-sm-10" ] [
+                                                                select [ _class "form-select"; bind.change.string source.ProblematicSection (fun v -> ChangeCodingProblem (v,"") |> dispatch ) ] [ 
+                                                                    forEach sections <| fun s ->
+                                                                        option [ attr.value s.Key ] [ text s.Value ]
+                                                                ]]
+                                                            ]
+                                                        div [ _class "row mb-3" ] [
+                                                            label [ _class "col-sm-2 col-form-label" ] [ text "The reason is..." ]
+                                                            div [ _class "col-sm-10" ] [
+                                                                textarea [ _class "form-control"; bind.change.string source.ProblematicSectionReason (fun v -> ChangeCodingProblem (source.ProblematicSection,v) |> dispatch ) ] []
+                                                            ]
+                                                        ]
+                                                        button [ on.click (fun _ -> SubmitCodingProblem |> dispatch ) ] [ text "Flag" ]
+                                                    ]
+                                                ] // end flagging card
+                                            | false -> empty
 
                                         ]
                                     | _ -> empty // is not a source node.
