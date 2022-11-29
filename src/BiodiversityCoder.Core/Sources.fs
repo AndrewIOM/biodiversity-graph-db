@@ -49,7 +49,7 @@ module Sources =
         | Database of DatabaseNode
 
     type SourceNode =
-        | Included of Source
+        | Included of Source * CodingProgress
         | Unscreened of Source
         | Excluded of Source * because:ExclusionReason * notes:Text.Text
 
@@ -64,6 +64,12 @@ module Sources =
         | IsOceanic
         | IsSpaceForTime
         | OtherExclusionReason
+
+    and CodingProgress =
+        | CompletedNone
+        | InProgress of completedSections:Text.ShortText list
+        | Stalled of completedSections:Text.ShortText list * stalledOnSection:Text.ShortText * reason:Text.Text
+        | CompletedAll
 
     type SourceNodeRelation =
         | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode

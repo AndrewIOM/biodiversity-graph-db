@@ -12,18 +12,15 @@ module Exposure =
         /// An individual date made for a point in a discontinuous
         /// time-series, for example a stratigraphic sequence.
         type IndividualDateNode = {
-            [<Name("Estimated (calibrated) date")>]
-            [<Help("The date specified by the authors after any calibration steps. Unit: cal year before present.")>]
-            TimeEstimate: float<OldDate.calYearBP>
-            [<Name("Uncalibrated date")>]
-            [<Help("Specify the dating method and uncalibrated date. For radiocarbon, enter the raw uncalibrated date; if this is unavailable, enter the calibrated date and calibration curve used.")>]
-            Date: OldDate.OldDate
+            [<Name("Dating method")>]
+            [<Help("Specify the dating method and associated raw date information. For radiocarbon, enter the raw uncalibrated date; if this is unavailable, enter the calibrated date and calibration curve used.")>]
+            Date: OldDate.OldDatingMethod
             [<Name("Material that was dated")>]
             [<Help("Example: leaves; ostracod shells. Note: this is a free field, but be as succinct as possible.")>]
             MaterialDated: Text.ShortText
             [<Name("Sample depth")>]
-            [<Help("If a sediment core, select 'Some' to enter the depth in centimetres at which this date was collected. Otherwise, select 'None'.")>]
-            SampleDepth: StratigraphicSequence.Depth option
+            [<Help("If a sediment core, select 'Some' to enter the depth in centimetres (cm) at which this date was collected (either a depth range or single depth). Otherwise, select 'None'.")>]
+            SampleDepth: StratigraphicSequence.DepthInCore option
             [<Name("Was this date discarded?")>]
             [<Help("Select 'No' unless the date was provided but not used in the formation of an age-depth model (for a sediment core).")>]
             Discarded: bool
@@ -37,12 +34,17 @@ module Exposure =
 
         and TemporalResolution =
             /// time series that have even timesteps, for example tree ring data.
-            | Regular of timestep:float<OldDate.calYearBP>
+            | Regular of timestep:float<OldDate.calYearBP> * feature:RegularFeature
             /// time series that have uneven timesteps, for example sedimentary data.
             | Irregular
         
         and Hiatus = Hiatus of oldest:float<OldDate.calYearBP> * youngest:float<OldDate.calYearBP>
 
+        and RegularFeature =
+            | WoodAnatomicalFeatures
+            | Varves
+            | BoneOrToothGrowth
+            | OtherRegularFeature of name:Text.ShortText
 
     /// The temporal index handles relations between calendar-based / qualitative-based
     /// dates in the past and occurrence data.
@@ -86,9 +88,9 @@ module Exposure =
         | LatestTime                of QualitativeLabelNode * CalYearNode
         // from individual dates (radiocarbon etc?)
         | TimeEstimate              of IndividualDateNode * CalYearNode
-        | OccursWithin              of IndividualDateNode * QualitativeLabelNode
         | UncertaintyOldest         of IndividualDateNode * CalYearNode
         | UncertaintyYoungest       of IndividualDateNode * CalYearNode
+        | OccursWithin              of IndividualDateNode * QualitativeLabelNode
         // from individual temporal extent:
         | ExtentEarliest            of IndividualTimelineNode * CalYearNode
         | ExtentEarliestUncertainty of IndividualTimelineNode * CalYearNode
@@ -108,10 +110,10 @@ module Exposure =
         | Contains
         | EarliestTime
         | LatestTime
-        | TimeEstimate                  of exact:float<OldDate.calYearBP>
-        | OccursWithin                  of exact:float<OldDate.calYearBP>
-        | UncertaintyOldest             of exact:float<OldDate.calYearBP>
-        | UncertaintyYoungest           of exact:float<OldDate.calYearBP>
+        | TimeEstimate                  of exact:OldDate.OldDate
+        | OccursWithin
+        | UncertaintyOldest             of exact:OldDate.OldDate
+        | UncertaintyYoungest           of exact:OldDate.OldDate
         | ExtentEarliest
         | ExtentEarliestUncertainty
         | ExtentLatest

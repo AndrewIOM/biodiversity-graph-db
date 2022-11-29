@@ -17,6 +17,8 @@ type FormMessage =
     | AddOrUpdateNode of System.Type * validateRelations:(seq<GraphStructure.ProposedRelation> -> bool) * requiredRelations:RelationViewModel list
     | EnterNodeRelationData of nodeType:string * toggle:string * GraphStructure.ProposedRelation * sinkKeys:Graph.UniqueKey list
     | ChangeNodeRelationToggle of nodeType:string * toggle:string
+    /// Allows entry of a value from which to compute the relationship
+    | EnterRelationCreationData of nodeType:string * toggle:string * fieldName:string * enteredValue:NodeViewModel * rel:GraphStructure.ProposedRelation option
 
 module Create =
     
@@ -322,7 +324,7 @@ module ViewGen =
             ]
         ]
 
-    let rec renderPropertyInfo f (field: System.Reflection.PropertyInfo) (nestedVm:NodeViewModel -> NodeViewModel) dispatch makeField' formId =
+    let rec renderPropertyInfo f (field: System.Reflection.PropertyInfo) (nestedVm:NodeViewModel -> NodeViewModel) (dispatch:NodeViewModel->unit) makeField' =
         // Figure out if the field already has a value.
         cond (f |> Map.tryFind field.Name) <| function
         | Some v ->
@@ -333,20 +335,20 @@ module ViewGen =
                 makeField' (Some field) v nestedVm field.PropertyType dispatch
             | FieldValue existingValue -> 
                 // Field is a simple type with a value already set. Render with value.
-                genField field (Some existingValue) (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
+                genField field (Some existingValue) (fun s -> (nestedVm s) |> dispatch)
             | FieldList l ->
                 listGroup field [
                     forEach l <| fun k -> concat [
-                        renderPropertyInfo f (field.PropertyType.GetProperty("Head")) (fun vm -> nestedVm <| FieldList([fst k, vm])) dispatch makeField' formId
-                        small [ on.click(fun _ -> EnterNodeCreationData(formId,nestedVm (FieldList [fst k, NotEnteredYet])) |> dispatch) ] [ text "Remove this one" ]
+                        renderPropertyInfo f (field.PropertyType.GetProperty("Head")) (fun vm -> nestedVm <| FieldList([fst k, vm])) dispatch makeField'
+                        small [ on.click(fun _ -> (nestedVm (FieldList [fst k, NotEnteredYet])) |> dispatch) ] [ text "Remove this one" ]
                     ]
-                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> EnterNodeCreationData(formId,nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, NotEnteredYet] )) |> dispatch) ] [ text "Add another" ] ]
+                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, NotEnteredYet] )) |> dispatch) ] [ text "Add another" ] ]
             | Fields _
             | NotEnteredYet ->
                 cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [ 
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> EnterNodeCreationData(formId,nestedVm (FieldList [(0, NotEnteredYet)])) |> dispatch) ] [ text "Add another" ] ]
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)])) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
                     // Field does not have an existing value. Render cleanly.
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
@@ -359,16 +361,16 @@ module ViewGen =
                         | true ->
                             // Is a record. Render fields nested.
                             forEach (Reflection.FSharpType.GetRecordFields(field.PropertyType)) <| fun field ->
-                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
+                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField'
                         | false ->
                             // Is not a DU or record. Render simple field.
-                            genField field None (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
+                            genField field None (fun s -> (nestedVm s) |> dispatch)
         | None ->
             // Field does not have an existing value. Render cleanly.
             cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> EnterNodeCreationData(formId,nestedVm (FieldList [(0, NotEnteredYet)] )) |> dispatch) ] [ text "Add another" ] ]
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)] )) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
                     | true -> 
@@ -380,10 +382,10 @@ module ViewGen =
                         | true ->
                             // Is a record. Render fields nested.
                             forEach (Reflection.FSharpType.GetRecordFields(field.PropertyType)) <| fun field ->
-                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField' formId
+                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField'
                         | false ->
                             // Is not a DU or record. Render simple field.
-                            genField field None (fun s -> EnterNodeCreationData(formId,nestedVm s) |> dispatch)
+                            genField field None (fun s -> (nestedVm s) |> dispatch)
 
     /// Generate form fields corresponding to a nested node view model.
     /// Each level may be a DU, which leads to generation of a select box with case options
@@ -398,28 +400,28 @@ module ViewGen =
                         if Reflection.FSharpType.GetUnionCases(nestedType).Length <> 1 then
                             // Nothing entered yet. Display an empty select box for the case.
                             // A DU case is not yet selected. Don't display any fields.
-                            genSelect field nestedType "" (fun s -> EnterNodeCreationData(formId,nestedVm(DU(s,NotEnteredYet))) |> dispatch)
+                            genSelect field nestedType "" (fun s -> (nestedVm(DU(s,NotEnteredYet))) |> dispatch)
                         else 
                             // There is only one DU case, so skip rendering the choice.
                             cond (Reflection.FSharpType.GetUnionCases(nestedType) |> Seq.tryFind(fun c -> c.Name = (Reflection.FSharpType.GetUnionCases(nestedType).[0].Name))) <| function
                             | Some s ->
                                 // None of the fields have any entered values yet. Render all of them cleanly.
-                                forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU((Reflection.FSharpType.GetUnionCases(nestedType).[0].Name), Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId) formId
+                                forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU((Reflection.FSharpType.GetUnionCases(nestedType).[0].Name), Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
                             | None -> empty
                     | DU (selectedCase: string, vm) ->
                         // A DU case is selected. Display its fields for editing.
                         concat [
-                            genSelect field nestedType selectedCase (fun (s: string) -> EnterNodeCreationData(formId,nestedVm(DU(s,vm))) |> dispatch)
+                            genSelect field nestedType selectedCase (fun (s: string) -> (nestedVm(DU(s,vm))) |> dispatch)
                             cond (Reflection.FSharpType.GetUnionCases(nestedType) |> Seq.tryFind(fun c -> c.Name = selectedCase)) <| function
                             | Some s ->
                                 // Get all of the field's values
                                 cond vm <| function
                                 | Fields f ->
                                     // TODO May be a simple value OR a record type (with lots of fields. Render this as nested fields)...
-                                    forEach (s.GetFields()) <| fun field -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId) formId
+                                    forEach (s.GetFields()) <| fun field -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
                                 | _ ->
                                     // None of the fields have any entered values yet. Render all of them cleanly.
-                                    forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId) formId
+                                    forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
                             | None -> empty ]
                     | _ -> 
                         // Shouldn't be able to have a field when it is a DU.
@@ -431,18 +433,18 @@ module ViewGen =
                 | Fields f ->
                     // Fields already have some data entered. Render with existing values.
                     forEach (Reflection.FSharpType.GetRecordFields(nestedType)) <| fun field ->
-                        renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId) formId
+                        renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId)
                 | _ ->
                     // Fields have no data entered yet. Render using blank field view model.
                     forEach (Reflection.FSharpType.GetRecordFields(nestedType)) <| fun field ->
-                        renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId) formId
+                        renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId)
             | false -> empty // Unsupported type (not a record or DU).
 
     let makeNodeForm'<'a> (nodeViewModel: NodeViewModel option) buttonName dispatch validateRelations (requiredRelations:RelationViewModel list) =
         div [ _class "simple-box" ] [
             cond nodeViewModel <| function
-            | Some vm -> makeField (typeof<'a>).Name None vm id typeof<'a> dispatch
-            | None -> makeField (typeof<'a>).Name None NotEnteredYet id typeof<'a> dispatch
+            | Some vm -> makeField (typeof<'a>).Name None vm id typeof<'a> (fun vm -> EnterNodeCreationData((typeof<'a>).Name,vm) |> dispatch)
+            | None -> makeField (typeof<'a>).Name None NotEnteredYet id typeof<'a> (fun vm -> EnterNodeCreationData((typeof<'a>).Name,vm) |> dispatch)
             button [ _class "btn btn-primary"; on.click (fun _ -> AddOrUpdateNode((typeof<'a>), validateRelations, requiredRelations) |> dispatch) ] [ text buttonName ]
         ]
 
@@ -480,7 +482,7 @@ module ViewGen =
             | case, _ -> case.Name  
 
         /// Render a node relation field item.
-        let selectExistingNode<'sinkNodeType> name (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
+        let selectExistingNode<'sinkNodeType> name helpText (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
             div [ _class "row mb-3" ] [
                 label [ _class "col-sm-2 col-form-label" ] [ text name ]
                 div [ _class "col-sm-10" ] [
@@ -490,12 +492,62 @@ module ViewGen =
                         | true -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
                         | false -> select [ _class "form-select"; bind.change.string v.Head.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
                     | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                    small [ _class "form-text" ] [ text helpText ]
                 ]
             ]
-        
+
+        /// Allows selecting an existing node by the entry of a specific data. Data is passed
+        /// to the relation, allowing for construction of complex relation data.
+        let selectExistingBy<'sinkNodeType, 'relArg> name helpText (rel:'relArg -> GraphStructure.ProposedRelation) (tryCompute:'relArg -> (Graph.UniqueKey * 'relArg) option) (relationVms:Map<string * string,Map<string, NodeViewModel * GraphStructure.ProposedRelation option>>) sourceNodeName toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
+            div [ _class "row mb-3" ] [
+                div [ _class "col-sm-2 col-form-label" ] [ label [] [ text name ] ]
+                div [ _class "col-sm-10" ] [
+                    cond (relationVms |> Map.tryFind (sourceNodeName, toggle)) <| function
+                    | Some existing ->
+                        cond (existing |> Map.tryFind name) <| function
+                        | Some (vm, proposed) ->
+                            cond proposed <| function
+                            | Some p ->
+                                // There is a set value for this field. Only show the selected value with destroy option.
+                                cond (relationValues |> Map.tryFind p) <| function
+                                | Some all ->
+                                    concat [
+                                        forEach all <| fun v ->
+                                            textf "Selected node is %s" v.AsString
+                                        button [ _class "btn btn-secondary"; on.click (fun _ -> 
+                                            EnterNodeRelationData(sourceNodeName, toggle, p, []) |> dispatch
+                                            EnterRelationCreationData(sourceNodeName, toggle, name, NotEnteredYet, None) |> dispatch)
+                                        ] [ text "Change" ]
+                                    ]
+                                | None -> text "Error finding selected node"
+                            | None ->
+                                // There is no existing relation. Try and form one.
+                                concat [
+                                    makeField (typeof<'relArg>).Name None vm id typeof<'relArg> (fun vm -> EnterRelationCreationData(sourceNodeName, toggle, name, vm, None) |> dispatch)
+                                    button [
+                                        _class "btn btn-secondary"
+                                        on.click(fun _ -> 
+                                            Create.createFromViewModel typeof<'relArg> vm
+                                            |> Result.lift (fun r -> r :?> 'relArg)
+                                            |> Result.bind (tryCompute >> Result.ofOption "Could not create a link")
+                                            |> Result.mapError(fun e ->
+                                                EnterRelationCreationData(sourceNodeName, toggle, e, vm, None) |> dispatch
+                                                )
+                                            |> Result.iter(fun (key, r) -> 
+                                                EnterRelationCreationData(sourceNodeName, toggle, name, vm, Some (rel r)) |> dispatch
+                                                EnterNodeRelationData(sourceNodeName, toggle, rel r, [key]) |> dispatch))
+                                    ] [ text "Link" ]
+                                ]
+                        | None -> makeField (typeof<'relArg>).Name None NotEnteredYet id typeof<'relArg> (fun vm -> EnterRelationCreationData(sourceNodeName, toggle, name, vm, None) |> dispatch)
+                    | None -> makeField (typeof<'relArg>).Name None NotEnteredYet id typeof<'relArg> (fun vm -> EnterRelationCreationData(sourceNodeName, toggle, name, vm, None) |> dispatch)
+                    small [ _class "form-text" ] [ text helpText ]
+                ]
+            ]
+
+
         /// Render a node relation field item.
         /// Allows entry of multiple sink nodes for this type of relation.
-        let selectExistingNodeMulti<'sinkNodeType> (name: string) (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
+        let selectExistingNodeMulti<'sinkNodeType> (name: string) helpText (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
             div [ _class "row mb-3" ] [
                 label [ _class "col-sm-2 col-form-label" ] [ text name ]
                 div [ _class "col-sm-10" ] [
@@ -505,6 +557,7 @@ module ViewGen =
                             select [ _class "form-select"; bind.change.string v.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
                         select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ] ]
                     | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                    small [ _class "form-text" ] [ text helpText ]
                 ]
             ]
         
@@ -549,4 +602,14 @@ module ViewGen =
 
         module Validation =
 
+            /// Assumes that relations are nested once.
+            let hasOneByCase (case:string) (relations:GraphStructure.ProposedRelation seq) = 
+                relations |> Seq.where(fun r ->
+                    let info2, _ = FSharpValue.GetUnionFields(r, typeof<GraphStructure.ProposedRelation>)
+                    let info3 = info2.GetFields()
+                    if info3.Length = 0 then false else case = info3.[0].Name
+                ) |> Seq.length = 1
+
             let hasOne i relations = relations |> Seq.where(fun r -> r = i) |> Seq.length = 1
+
+            

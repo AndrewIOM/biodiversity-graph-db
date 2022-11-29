@@ -164,6 +164,10 @@ module FieldDataTypes =
                 | _ -> Error "Not a valid depth"
                 |> Result.toOption
 
+        type DepthInCore = 
+            | DepthBand of lower:Depth * upper:Depth
+            | DepthPoint of Depth
+                
 
     [<RequireQualifiedAccess>]
     module OldDate =
@@ -172,18 +176,29 @@ module FieldDataTypes =
         [<Measure>] type calYearBP
 
         /// Uncalibrated radiocarbon dates are reported in
-        /// uncalibrated years before present 
+        /// uncalibrated years before present (BP)
         [<Measure>] type uncalYearBP
 
         /// A calendar date
         [<Measure>] type AD
         [<Measure>] type BC
 
-        type OldDate =
-        | CollectionDate of yearCollected:float<AD>
-        | RadiocarbonCalibrated of calibratedDate:float<calYearBP> * calibrationCurve:Text.ShortText
-        | RadiocarbonUncalibrated of uncalibratedDate:float<uncalYearBP>
-        | Lead210 of dateCalYrBP:float<calYearBP>
+        type OldDatingMethod =
+            | RadiocarbonUncalibrated of uncalibratedDate:float<uncalYearBP>
+            | RadiocarbonCalibrated of calibratedDate:float<calYearBP> * calibrationCurve:Text.ShortText
+            | Tephra of tephraName:Text.ShortText * date:OldDate
+            | HistoricEvent of eventName:Text.ShortText * date:OldDate
+            | Lead210 of concentration:float * date:OldDate
+            | Radiocaesium of concentration:float * date:OldDate
+            | CollectionDate of yearCollected:float<AD>
+            // | DepositionalZone of zoneName:Text.ShortText
+
+        and OldDate =
+            | BP of bpDate:float<uncalYearBP>
+            | CalYrBP of calibratedDate:float<calYearBP> * calibrationTechnique:Text.ShortText option
+            | HistoryYearAD of calendarYear:float<AD>
+            | HistoryYearBC of calendarYear:float<BC>
+
 
     type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
     type Person = { FirstName: Text.ShortText; LastName: Text.ShortText }

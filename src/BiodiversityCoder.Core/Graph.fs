@@ -223,7 +223,7 @@ module GraphStructure =
             | SourceNode s ->
                 match s with
                 | Unscreened s2 -> "SourceNode"
-                | Included s2 -> "SourceNode"
+                | Included _ -> "SourceNode"
                 | Excluded (s2,_,_) -> "SourceNode"
             | ExposureNode e ->
                 match e with
@@ -277,7 +277,7 @@ module GraphStructure =
             | SourceNode s ->
                 match s with
                 | Unscreened s
-                | Included s
+                | Included (s,_)
                 | Excluded (s,_,_) ->
                     match s with
                     | Bibliographic n -> 
@@ -345,7 +345,7 @@ module GraphStructure =
         | SourceNode s ->
             match s with
             | Unscreened s
-            | Included s
+            | Included (s,_)
             | Excluded (s,_,_) ->
                 match s with
                 | Bibliographic n -> 
@@ -502,7 +502,7 @@ module GraphStructure =
                 | Contains -> compare source sink rel (Relation.Exposure Contains)
                 | LatestTime -> compare source sink rel (Relation.Exposure LatestTime)
                 | TimeEstimate t -> compare source sink rel (Relation.Exposure <| TimeEstimate t)
-                | OccursWithin t -> compare source sink rel (Relation.Exposure <| OccursWithin t)
+                | OccursWithin -> compare source sink rel (Relation.Exposure <| OccursWithin)
                 | UncertaintyOldest t -> compare source sink rel (Relation.Exposure <| UncertaintyOldest t)
                 | UncertaintyYoungest t -> compare source sink rel (Relation.Exposure <| UncertaintyYoungest t)
                 | ExtentEarliest -> compare source sink rel (Relation.Exposure ExtentEarliest)
