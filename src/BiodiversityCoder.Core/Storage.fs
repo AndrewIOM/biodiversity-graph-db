@@ -121,7 +121,8 @@ module Storage =
         loadIndex directory
         |> Result.bind(fun r -> 
             [ r; nodes ] 
-            |> Seq.concat 
+            |> Seq.concat
+            |> Seq.sortBy(fun n -> n.NodeTypeName, n.NodeId)
             |> makeCacheFile directory indexFile
             |> Result.lift(fun _ -> [r; nodes] |> List.concat ))
 
@@ -190,7 +191,7 @@ module Storage =
                     NodeId = (updatedAtom |> fst |> fst)
                     NodeTypeName = (updatedAtom |> fst |> snd).NodeType()
                     PrettyName = (updatedAtom |> fst |> snd).DisplayName()
-                }]
+                }] |> List.sortBy(fun n -> n.NodeTypeName, n.NodeId)
             do! replaceIndex (unwrap fileGraph).Directory newIndex
             
             // 2. Update the individual cached file.
