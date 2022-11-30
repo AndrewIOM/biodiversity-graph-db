@@ -53,21 +53,33 @@ module Population =
             | Implicit
             | ImplicitByExpert of lastName:Text.ShortText * initials:Text.ShortText
 
+        /// Biotic proxy represents the physical nature of the material (e.g. the component)
+        /// and the taxonomic label attached to it. Examples:
+        /// - Microfossil. e.g. Pinus-type pollen - a **Pollen** of morphotype name **Pinus-type**
+        /// - Macrofossil. e.g. Pine cone - a **Conifer Cone** of taxonomic group **Pinus**
+        /// - Megafossil. e.g. subfossil trunk - a **Wood Stem** of taxonomic group **Pinus**
+        /// - Megafossil. e.g. driftwood - a **Wood Stem** of taxonomic group **Pinus**
+        /// - Megafossil. e.g. whole mammoth - a **Whole Organism** of taxonomic group **Mammuthus**
+        /// - AncientDNA. e.g. Pinus sylvestris. **AncientDNA** of taxon **Pinus sylvestris**
+        /// - ContemporaneousWholeOrganism. e.g. Wood disc collected at modern day. It was a **Pinus sylvestris**
         type BioticProxyNode =
-            | Morphotype of Morphotype
+            | Morphotype of morphotype:Morphotype
             | AncientDNA of taxon:Text.ShortText
-            | DirectIdentification of taxon:Text.ShortText
+            | ContemporaneousWholeOrganism of taxon:Text.ShortText
 
+        /// Definitions of terms:
+        /// organismPart = the name of the component used to conduct identification (e.g. trunk for driftwood)
         and Morphotype =
             | Microfossil of proxyGroup:MicrofossilGroup * morphotypeName:Text.ShortText
-            | Fossil of morphotypeName: Text.ShortText
+            | Macrofossil of organismPart:Text.ShortText * morphotypeName: Text.ShortText
+            | Megafossil of organismPart:Text.ShortText * morphotypeName: Text.ShortText
 
         and MicrofossilGroup =
             | Pollen
             | PlantMacrofossil
             | Diatom
             | Ostracod
-            | OtherMicrofossil of Text.ShortText
+            | OtherMicrofossilGroup of Text.ShortText
 
     /// A hyper-edge representing the relation between a biotic proxy and
     /// taxon, which is only relevant within a particular study timeline context.

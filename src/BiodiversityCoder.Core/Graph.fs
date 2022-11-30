@@ -244,17 +244,18 @@ module GraphStructure =
                 | BioticProxyNode n ->
                     match n with
                     | Population.BioticProxies.BioticProxyNode.AncientDNA a -> sprintf "aDNA: %s" a.Value
-                    | Population.BioticProxies.BioticProxyNode.DirectIdentification taxon -> sprintf "Direct ID: %s" taxon.Value
+                    | Population.BioticProxies.BioticProxyNode.ContemporaneousWholeOrganism taxon -> sprintf "Contemporaneous Whole Organism: %s" taxon.Value
                     | Population.BioticProxies.BioticProxyNode.Morphotype m -> 
                         match m with
-                        | Population.BioticProxies.Fossil f -> sprintf "Fossil: %s" f.Value
+                        | Population.BioticProxies.Megafossil (part,f) -> sprintf "Megafossil: %s" f.Value
+                        | Population.BioticProxies.Macrofossil (part,f) -> sprintf "Macrofossil: %s" f.Value
                         | Population.BioticProxies.Microfossil (group, name) ->
                             match group with
                             | Population.BioticProxies.MicrofossilGroup.Diatom -> sprintf "Morphotype: Diatom - %s" name.Value
                             | Population.BioticProxies.MicrofossilGroup.Ostracod -> sprintf "Morphotype: Ostracod - %s" name.Value
                             | Population.BioticProxies.MicrofossilGroup.PlantMacrofossil -> sprintf "Morphotype: Plant Macrofossil - %s" name.Value
                             | Population.BioticProxies.MicrofossilGroup.Pollen -> sprintf "Morphotype: Pollen - %s" name.Value
-                            | Population.BioticProxies.MicrofossilGroup.OtherMicrofossil group -> sprintf "Morphotype: %s - %s" group.Value name.Value
+                            | Population.BioticProxies.MicrofossilGroup.OtherMicrofossilGroup group -> sprintf "Morphotype: %s - %s" group.Value name.Value
                 | TaxonomyNode n ->
                     match n with
                     | Taxonomy.TaxonNode.Life -> "Life"
@@ -312,17 +313,18 @@ module GraphStructure =
             | BioticProxyNode n ->
                 match n with
                 | Population.BioticProxies.BioticProxyNode.AncientDNA a -> sprintf "aDNA_%s" (safeString a.Value) |> toLower |> friendlyKey
-                | Population.BioticProxies.BioticProxyNode.DirectIdentification taxon -> sprintf "direct_%s" (safeString taxon.Value) |> toLower |> friendlyKey
+                | Population.BioticProxies.BioticProxyNode.ContemporaneousWholeOrganism taxon -> sprintf "direct_%s" (safeString taxon.Value) |> toLower |> friendlyKey
                 | Population.BioticProxies.BioticProxyNode.Morphotype m -> 
                     match m with
-                    | Population.BioticProxies.Fossil f -> sprintf "morphotype_fossil_%s" (safeString f.Value) |> toLower |> friendlyKey
+                    | Population.BioticProxies.Megafossil (part,f) -> sprintf "morphotype_megafossil_%s_%s" (safeString f.Value) (safeString part.Value) |> toLower |> friendlyKey
+                    | Population.BioticProxies.Macrofossil (part,f) -> sprintf "morphotype_megafossil_%s_%s" (safeString f.Value) (safeString part.Value) |> toLower |> friendlyKey
                     | Population.BioticProxies.Microfossil (group, name) ->
                         match group with
                         | Population.BioticProxies.MicrofossilGroup.Diatom -> sprintf "morphotype_diatom_%s" (safeString name.Value) |> toLower |> friendlyKey
                         | Population.BioticProxies.MicrofossilGroup.Ostracod -> sprintf "morphotype_ostracod_%s" (safeString name.Value) |> toLower |> friendlyKey
                         | Population.BioticProxies.MicrofossilGroup.PlantMacrofossil -> sprintf "morphotype_plantmacrofossil_%s" (safeString name.Value) |> toLower |> friendlyKey
                         | Population.BioticProxies.MicrofossilGroup.Pollen -> sprintf "morphotype_pollen_%s" (safeString name.Value) |> toLower |> friendlyKey
-                        | Population.BioticProxies.MicrofossilGroup.OtherMicrofossil group -> sprintf "morphotype_customgroup_%s_%s" (safeString group.Value) (safeString name.Value) |> toLower |> friendlyKey
+                        | Population.BioticProxies.MicrofossilGroup.OtherMicrofossilGroup group -> sprintf "morphotype_customgroup_%s_%s" (safeString group.Value) (safeString name.Value) |> toLower |> friendlyKey
             | TaxonomyNode n ->
                 match n with
                 | Taxonomy.TaxonNode.Life -> "life" |> toLower |> friendlyKey
@@ -337,7 +339,7 @@ module GraphStructure =
             | InferenceMethodNode n ->
                 match n with
                 | BioticProxies.InferenceMethodNode.Implicit -> "Implicit" |> toLower |> friendlyKey
-                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" r.Value |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" (safeString r.Value) |> toLower |> friendlyKey
                 | BioticProxies.InferenceMethodNode.ImplicitByExpert (l,i) -> sprintf "expert_%s_%s" (safeString l.Value) (safeString i.Value) |> toLower |> friendlyKey
             | ProxiedTaxonNode -> guidKey (System.Guid.NewGuid())
             | ContextNode _ -> guidKey (System.Guid.NewGuid())
