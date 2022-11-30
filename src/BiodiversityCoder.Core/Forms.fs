@@ -605,11 +605,12 @@ module ViewGen =
             /// Assumes that relations are nested once.
             let hasOneByCase (case:string) (relations:GraphStructure.ProposedRelation seq) = 
                 relations |> Seq.where(fun r ->
-                    let info2, _ = FSharpValue.GetUnionFields(r, typeof<GraphStructure.ProposedRelation>)
+                    let info2, values = FSharpValue.GetUnionFields(r, typeof<GraphStructure.ProposedRelation>)
                     let info3 = info2.GetFields()
-                    if info3.Length = 0 then false else case = info3.[0].Name
+                    if info3.Length <> 1 then false
+                    else
+                        let nestedCase, _ = FSharpValue.GetUnionFields(values.[0], info3.[0].PropertyType)
+                        case = nestedCase.Name
                 ) |> Seq.length = 1
 
             let hasOne i relations = relations |> Seq.where(fun r -> r = i) |> Seq.length = 1
-
-            
