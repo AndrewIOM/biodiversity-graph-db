@@ -32,7 +32,8 @@ module Seed =
                 |> Result.bind (Relations.addProxiedTaxon {
                     InferredFrom = proxyNode
                     InferredUsing = inferNode
-                    InferredAs = taxonNode })
+                    InferredAs = taxonNode
+                    InferredAsAdditional = [] })
         }
 
     /// Import all sources from a bibtext file.

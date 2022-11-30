@@ -312,5 +312,7 @@ module Storage =
             |> Result.lift(fun g -> g, addedNodes.Head |> fst |> fst)
     }
 
-    let addProxiedTaxon existingProxy existingTaxon existingInfer fileGraph =
-        addProxiedTaxon' {InferredFrom = existingProxy; InferredUsing = existingInfer; InferredAs = existingTaxon } fileGraph
+    let addProxiedTaxon existingProxy existingTaxon existingAdditionalTaxa existingInfer fileGraph =
+        if (existingTaxon :: existingAdditionalTaxa) |> List.distinct |> List.length <> ((existingTaxon :: existingAdditionalTaxa) |> List.length)
+        then Error "Cannot add proxied taxon inferred as the same taxon more than once"
+        else addProxiedTaxon' {InferredFrom = existingProxy; InferredUsing = existingInfer; InferredAs = existingTaxon; InferredAsAdditional = existingAdditionalTaxa } fileGraph

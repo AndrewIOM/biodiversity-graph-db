@@ -80,6 +80,7 @@ module Population =
             InferredFrom:BioticProxyNode
             InferredUsing:InferenceMethodNode
             InferredAs:TaxonNode
+            InferredAsAdditional:TaxonNode list
         }
 
     module Context =

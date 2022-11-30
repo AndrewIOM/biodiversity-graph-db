@@ -81,7 +81,7 @@ module App =
         ProposedLink: Graph.UniqueKey option
         LinksToPrimarySources: (Graph.UniqueKey * string) option
         Screening: NodeViewModel
-        AddBioticHyperedge: Map<Graph.UniqueKey, Graph.UniqueKey option * Graph.UniqueKey option * Graph.UniqueKey option * Graph.UniqueKey option>
+        AddBioticHyperedge: Map<Graph.UniqueKey, Graph.UniqueKey option * Graph.UniqueKey option * (Graph.UniqueKey list) option * Graph.UniqueKey option>
         ProblematicSection: string
         ProblematicSectionReason: string
     }
@@ -107,7 +107,7 @@ module App =
         | FormMessage of FormMessage
         | SelectSource of key:Graph.UniqueKey
         | LookupTaxon of LookupTaxonMessage
-        | ChangeProxiedTaxonVm of timeline:Graph.UniqueKey * proxy:Graph.UniqueKey option * inference:Graph.UniqueKey option * taxon:Graph.UniqueKey option * measure:Graph.UniqueKey option
+        | ChangeProxiedTaxonVm of timeline:Graph.UniqueKey * proxy:Graph.UniqueKey option * inference:Graph.UniqueKey option * taxon:(Graph.UniqueKey list) option * measure:Graph.UniqueKey option
         | SubmitProxiedTaxon of timeline:Graph.UniqueKey
         | MarkPrimary of IsPrimarySource
         | ToggleConnectNewOrExistingSource
@@ -367,7 +367,7 @@ module App =
                 match model.SelectedSource with
                 | Some source -> 
                     match source.AddBioticHyperedge |> Map.tryFind timelineId with
-                    | Some (proxyId, inferId, taxonId, measureId) ->
+                    | Some (proxyId, inferId, taxaIds, measureId) ->
 
                         let saveEdge () = result {
                             // Unique keys to nodes
@@ -391,18 +391,22 @@ module App =
                                         | GraphStructure.InferenceMethodNode x -> Ok x
                                         | _ -> Error "Not an inference method node"
                                     | _ -> Error "Not an inference method node" )
-                            let! taxon = 
-                                Storage.atomByKey taxonId.Value g 
-                                |> Result.ofOption "Could not find taxon node"
-                                |> Result.bind(fun ((i,n),adj) ->
-                                    match n with
-                                    | GraphStructure.Node.PopulationNode p ->
-                                        match p with
-                                        | GraphStructure.TaxonomyNode x -> Ok x
-                                        | _ -> Error "Not a taxonomy node"
-                                    | _ -> Error "Not a taxonomy node" )
-                            
-                            let! updatedGraph, hyperEdgeId = Storage.addProxiedTaxon proxy taxon infer g
+                            let! taxa = 
+                                if taxaIds.Value.Length = 0 then Error "Must specify at least one taxon"
+                                else
+                                    taxaIds.Value |> List.map(fun taxonId ->
+                                        Storage.atomByKey taxonId g 
+                                        |> Result.ofOption "Could not find taxon node"
+                                        |> Result.bind(fun ((i,n),adj) ->
+                                            match n with
+                                            | GraphStructure.Node.PopulationNode p ->
+                                                match p with
+                                                | GraphStructure.TaxonomyNode x -> Ok x
+                                                | _ -> Error "Not a taxonomy node"
+                                            | _ -> Error "Not a taxonomy node" )
+                                    ) |> Result.ofList
+
+                            let! updatedGraph, hyperEdgeId = Storage.addProxiedTaxon proxy taxa.Head taxa.Tail infer g
                             
                             // Save (1) outcome measure from hyperedge to outcome node, and (2) relation from timeline to hyperedge.
                             let! timeline = Storage.atomByKey timelineId updatedGraph |> Result.ofOption "Could not find timeline"
@@ -593,13 +597,13 @@ module App =
 
     /// Lookup time to find if there is a calendar year node corresponding to that year in the
     /// graph database.
-    let trySelectTimeNode (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) (value:FieldDataTypes.OldDate.OldDate) =
+    let trySelectTimeNode (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) (value:FieldDataTypes.OldDate.OldDateSimple) =
         let v =
             match value with
-            | FieldDataTypes.OldDate.OldDate.CalYrBP (f, _) -> removeUnit f
-            | FieldDataTypes.OldDate.OldDate.HistoryYearAD f -> 1950. - removeUnit f
-            | FieldDataTypes.OldDate.OldDate.HistoryYearBC f -> removeUnit f + 1950.
-            | FieldDataTypes.OldDate.OldDate.BP f -> removeUnit f
+            | FieldDataTypes.OldDate.OldDateSimple.CalYrBP (f, _) -> removeUnit f
+            | FieldDataTypes.OldDate.OldDateSimple.HistoryYearAD f -> 1950. - removeUnit f
+            | FieldDataTypes.OldDate.OldDateSimple.HistoryYearBC f -> removeUnit f + 1950.
+            | FieldDataTypes.OldDate.OldDateSimple.BP f -> removeUnit f
         let nearestYear = System.Math.Round(v) |> int
         let key = Graph.UniqueKey.FriendlyKey("calyearnode",sprintf "%iybp" nearestYear)
         graph.Nodes<Exposure.TemporalIndex.CalYearNode>()
@@ -992,9 +996,9 @@ module App =
                                                                                                 ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" "Use if the dating method indicates a connection to a qualitative period. Example: peat deposit occurs within a locally-defined pollen zone." (Exposure.ExposureRelation.OccursWithin |> GraphStructure.ProposedRelation.Exposure)
                                                                                             ])
                                                                                             ("Absolute", [
-                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Estimated date (as stated by the authors)" "You may select a date in one of three units: BP, cal yr BP, or AD/BC (calendar year)." (Exposure.ExposureRelation.TimeEstimate >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Uncertainty: earliest date (as stated by the authors)" "Optional. If an uncertainty range has been given for the date, enter the earliest stated date here." (Exposure.ExposureRelation.UncertaintyOldest >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Uncertainty: latest date (as stated by the authors)" "Optional. Enter the latest stated date here." (Exposure.ExposureRelation.UncertaintyYoungest >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Estimated date (as stated by the authors)" "You may select a date in one of three units: BP, cal yr BP, or AD/BC (calendar year)." (Exposure.ExposureRelation.TimeEstimate >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: earliest date (as stated by the authors)" "Optional. If an uncertainty range has been given for the date, enter the earliest stated date here." (Exposure.ExposureRelation.UncertaintyOldest >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: latest date (as stated by the authors)" "Optional. Enter the latest stated date here." (Exposure.ExposureRelation.UncertaintyYoungest >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
                                                                                             ])
                                                                                         ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                                         ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualDateNode> (fun savedRelations ->
@@ -1025,12 +1029,12 @@ module App =
                                                                             ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" "" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
                                                                         ])
                                                                         ("Year", [
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: oldest date" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: oldest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: oldest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: latest date" "" (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: latest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDate> "Temporal extent: latest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: latest date" "" (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: latest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: latest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
                                                                         ])
                                                                     ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                     ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
@@ -1095,12 +1099,22 @@ module App =
                                                                                 | Some (proxy,infer,taxon,outcome) -> concat [
                                                                                     td [] [ select [ _class "form-select"; bind.change.string (if proxy.IsSome then proxy.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),infer,taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
                                                                                     td [] [ select [ _class "form-select"; bind.change.string (if infer.IsSome then infer.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,Some (Graph.stringToKey s),taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string (if taxon.IsSome then taxon.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (Graph.stringToKey s),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                                                    td [] [ 
+                                                                                        cond taxon <| function
+                                                                                        | Some t -> 
+                                                                                            concat [
+                                                                                                forEach t <| fun t -> div [ _class "form-floating" ] [
+                                                                                                    select [ _class "form-select"; bind.change.string (t.AsString) (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (taxon.Value |> List.map(fun f -> if f = t then Graph.stringToKey s else f)),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                                                    label [ attr.style "pointer-events: auto !important;"; on.click (fun _ -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (taxon.Value |> List.except [t]),outcome) |> dispatch)] [ text "Remove" ] ]
+                                                                                                select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (Graph.stringToKey s :: taxon.Value),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                                            ]
+                                                                                        | None -> select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some ([Graph.stringToKey s]),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                                    ]
                                                                                     td [] [ select [ _class "form-select"; bind.change.string (if outcome.IsSome then outcome.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,taxon,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
                                                                                 | None -> concat [
                                                                                     td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),None,None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
                                                                                     td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,Some (Graph.stringToKey s),None) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,Some ([Graph.stringToKey s]),None) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
                                                                                     td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
                                                                                 td [] [
                                                                                     button [ _class "btn btn-primary"; on.click (fun _ -> SubmitProxiedTaxon (timelineAtom |> fst |> fst) |> dispatch) ] [ text "Save" ]
@@ -1111,20 +1125,21 @@ module App =
                                                                                 | Some proxyName ->
                                                                                     cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredUsing |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
                                                                                     | Some methodName ->
-                                                                                        cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredAs |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
-                                                                                        | Some taxonName ->
-                                                                                            cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.MeasuredBy |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
-                                                                                            | Some outcome ->
-                                                                                            tr [] [
-                                                                                                td [] [ text proxyName ]
-                                                                                                td [] [ text methodName ]
-                                                                                                td [] [ text taxonName ]
-                                                                                                td [] [ text outcome ]
-                                                                                                td [] []
-                                                                                            ]
-                                                                                            | None -> text "None A"
-                                                                                        | None -> text "None B"
-                                                                                    | None -> text "None C"
+                                                                                        cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.MeasuredBy |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
+                                                                                        | Some outcome ->
+                                                                                        tr [] [
+                                                                                            td [] [ text proxyName ]
+                                                                                            td [] [ text methodName ]
+                                                                                            td [] [ 
+                                                                                                forEach (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredAs |> Seq.map (fun k -> Storage.atomFriendlyNameByKey k g)) <| fun taxonName ->
+                                                                                                    cond taxonName <| function
+                                                                                                    | Some taxonName -> text taxonName
+                                                                                                    | None -> empty ]
+                                                                                            td [] [ text outcome ]
+                                                                                            td [] []
+                                                                                        ]
+                                                                                        | None -> text "None A"
+                                                                                    | None -> text "None B"
                                                                                 | None -> textf "Proxy relation: %A" proxiedTaxonEdge
                                                                             ]
                                                                         ]

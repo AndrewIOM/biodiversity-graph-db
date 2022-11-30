@@ -110,10 +110,10 @@ module Exposure =
         | Contains
         | EarliestTime
         | LatestTime
-        | TimeEstimate                  of exact:OldDate.OldDate
+        | TimeEstimate                  of exact:OldDate.OldDateSimple
         | OccursWithin
-        | UncertaintyOldest             of exact:OldDate.OldDate
-        | UncertaintyYoungest           of exact:OldDate.OldDate
+        | UncertaintyOldest             of exact:OldDate.OldDateSimple
+        | UncertaintyYoungest           of exact:OldDate.OldDateSimple
         | ExtentEarliest
         | ExtentEarliestUncertainty
         | ExtentLatest

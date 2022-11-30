@@ -166,8 +166,8 @@ module FieldDataTypes =
 
         type DepthInCore = 
             | DepthBand of lower:Depth * upper:Depth
-            | DepthPoint of Depth
-                
+            | DepthPoint of depth:Depth
+
 
     [<RequireQualifiedAccess>]
     module OldDate =
@@ -194,6 +194,12 @@ module FieldDataTypes =
             // | DepositionalZone of zoneName:Text.ShortText
 
         and OldDate =
+            | BP of bpDate:float<uncalYearBP>
+            | CalYrBP of calibratedDate:float<calYearBP> * calibrationTechnique:Text.ShortText option
+            | HistoryYearAD of calendarYear:float<AD>
+            | HistoryYearBC of calendarYear:float<BC>
+
+        and OldDateSimple =
             | BP of bpDate:float<uncalYearBP>
             | CalYrBP of calibratedDate:float<calYearBP> * calibrationTechnique:Text.ShortText option
             | HistoryYearAD of calendarYear:float<AD>
