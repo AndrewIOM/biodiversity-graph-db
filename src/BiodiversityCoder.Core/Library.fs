@@ -1072,7 +1072,7 @@ module App =
 
                                                     cond (isCompletedSection "outcome" codingStatus) <| function
                                                     | true -> div [ _class "alert alert-success" ] [ strong [] [ text "Thank you! " ]; text "You've finished the outcomes section." ]
-                                                    | false ->
+                                                    | false -> concat [
                                                         // 3. For each study timeline, add proxied taxa.
                                                         forEach (source.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timelineAtom ->
                                                             // Display existing and add new proxied taxa
@@ -1146,8 +1146,9 @@ module App =
                                                                     ] // end proxied taxa table
                                                                 ]
                                                                 hr []
-                                                                button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "outcome" |> dispatch) ] [ text "I've finished coding outcomes" ]
                                                             ]
+                                                        button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "outcome" |> dispatch) ] [ text "I've finished coding outcomes" ]
+                                                    ]
                                                 ]
                                             ] // end outcomes card
 
