@@ -128,6 +128,9 @@ module FieldDataTypes =
             | Country   of country:Text.ShortText
             | Arctic
 
+        let private unwrapLat (Latitude l) = l
+        let private unwrapLon (Longitude l) = l
+
         type Latitude with 
             static member TryCreate s = 
                 match s with 
@@ -135,7 +138,8 @@ module FieldDataTypes =
                 | Text s -> s |> Parse.parseDouble |> Result.bind createLatitude
                 | _ -> Error "Not a valid latitude"
                 |> Result.toOption
-        
+            member this.Value = unwrapLat this
+
         type Longitude with 
             static member TryCreate s = 
                 match s with 
@@ -143,6 +147,7 @@ module FieldDataTypes =
                 | Text s -> s |> Parse.parseDouble |> Result.bind createLongitude
                 | _ -> Error "Not a valid longitude"
                 |> Result.toOption
+            member this.Value = unwrapLon this
 
 
     [<RequireQualifiedAccess>]
