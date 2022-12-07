@@ -15,7 +15,7 @@ type FormMessage =
     | EnterNodeCreationData of string * NodeViewModel
     | RelateNodes of Graph.UniqueKey * Graph.UniqueKey * GraphStructure.ProposedRelation
     | AddOrUpdateNode of System.Type * validateRelations:(seq<GraphStructure.ProposedRelation> -> bool) * requiredRelations:RelationViewModel list
-    | EnterNodeRelationData of nodeType:string * toggle:string * GraphStructure.ProposedRelation * sinkKeys:Graph.UniqueKey list
+    | EnterNodeRelationData of nodeType:string * toggle:string * GraphStructure.ProposedRelation * name:string * sinkKeys:Graph.UniqueKey list
     | ChangeNodeRelationToggle of nodeType:string * toggle:string
     /// Allows entry of a value from which to compute the relationship
     | EnterRelationCreationData of nodeType:string * toggle:string * fieldName:string * enteredValue:NodeViewModel * rel:GraphStructure.ProposedRelation option
@@ -482,23 +482,23 @@ module ViewGen =
             | case, _ -> case.Name  
 
         /// Render a node relation field item.
-        let selectExistingNode<'sinkNodeType> name helpText (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
+        let selectExistingNode<'sinkNodeType> name helpText (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<string * GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
             div [ _class "row mb-3" ] [
                 label [ _class "col-sm-2 col-form-label" ] [ text name ]
                 div [ _class "col-sm-10" ] [
-                    cond (relationValues |> Map.tryFind rel) <| function
+                    cond (relationValues |> Map.tryFind (name, rel)) <| function
                     | Some v -> 
                         cond v.IsEmpty <| function
-                        | true -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                        | false -> select [ _class "form-select"; bind.change.string v.Head.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                    | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                        | true -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                        | false -> select [ _class "form-select"; bind.change.string v.Head.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                    | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
                     small [ _class "form-text" ] [ text helpText ]
                 ]
             ]
 
         /// Allows selecting an existing node by the entry of a specific data. Data is passed
         /// to the relation, allowing for construction of complex relation data.
-        let selectExistingBy<'sinkNodeType, 'relArg> name helpText (rel:'relArg -> GraphStructure.ProposedRelation) (tryCompute:'relArg -> (Graph.UniqueKey * 'relArg) option) (relationVms:Map<string * string,Map<string, NodeViewModel * GraphStructure.ProposedRelation option>>) sourceNodeName toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
+        let selectExistingBy<'sinkNodeType, 'relArg> name helpText (rel:'relArg -> GraphStructure.ProposedRelation) (tryCompute:'relArg -> (Graph.UniqueKey * 'relArg) option) (relationVms:Map<string * string,Map<string, NodeViewModel * GraphStructure.ProposedRelation option>>) sourceNodeName toggle (relationValues:Map<string * GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
             div [ _class "row mb-3" ] [
                 div [ _class "col-sm-2 col-form-label" ] [ label [] [ text name ] ]
                 div [ _class "col-sm-10" ] [
@@ -509,13 +509,13 @@ module ViewGen =
                             cond proposed <| function
                             | Some p ->
                                 // There is a set value for this field. Only show the selected value with destroy option.
-                                cond (relationValues |> Map.tryFind p) <| function
+                                cond (relationValues |> Map.tryFind (name,p)) <| function
                                 | Some all ->
                                     concat [
                                         forEach all <| fun v ->
                                             textf "Selected node is %s" v.AsString
                                         button [ _class "btn btn-secondary"; on.click (fun _ -> 
-                                            EnterNodeRelationData(sourceNodeName, toggle, p, []) |> dispatch
+                                            EnterNodeRelationData(sourceNodeName, toggle, p, name, []) |> dispatch
                                             EnterRelationCreationData(sourceNodeName, toggle, name, NotEnteredYet, None) |> dispatch)
                                         ] [ text "Change" ]
                                     ]
@@ -535,7 +535,7 @@ module ViewGen =
                                                 )
                                             |> Result.iter(fun (key, r) -> 
                                                 EnterRelationCreationData(sourceNodeName, toggle, name, vm, Some (rel r)) |> dispatch
-                                                EnterNodeRelationData(sourceNodeName, toggle, rel r, [key]) |> dispatch))
+                                                EnterNodeRelationData(sourceNodeName, toggle, rel r, name, [key]) |> dispatch))
                                     ] [ text "Link" ]
                                 ]
                         | None -> makeField (typeof<'relArg>).Name None NotEnteredYet id typeof<'relArg> (fun vm -> EnterRelationCreationData(sourceNodeName, toggle, name, vm, None) |> dispatch)
@@ -547,22 +547,22 @@ module ViewGen =
 
         /// Render a node relation field item.
         /// Allows entry of multiple sink nodes for this type of relation.
-        let selectExistingNodeMulti<'sinkNodeType> (name: string) helpText (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
+        let selectExistingNodeMulti<'sinkNodeType> (name: string) helpText (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<string * GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
             div [ _class "row mb-3" ] [
                 label [ _class "col-sm-2 col-form-label" ] [ text name ]
                 div [ _class "col-sm-10" ] [
-                    cond (relationValues |> Map.tryFind rel) <| function
+                    cond (relationValues |> Map.tryFind (name, rel)) <| function
                     | Some all -> concat [
                         forEach all <| fun v ->
-                            select [ _class "form-select"; bind.change.string v.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                        select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ] ]
-                    | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                            select [ _class "form-select"; bind.change.string v.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
+                        select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ] ]
+                    | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
                     small [ _class "form-text" ] [ text helpText ]
                 ]
             ]
         
         /// Render a toggle for different combinations of possible relations.
-        let relationsToggle<'a> name (elements: (string * (string -> string -> Map<GraphStructure.ProposedRelation,Graph.UniqueKey list> -> Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> (FormMessage -> unit) -> Bolero.Node) list) list) (currentRelations: Map<string,string * Map<GraphStructure.ProposedRelation,list<Graph.UniqueKey>>>) graph dispatch =
+        let relationsToggle<'a> name (elements: (string * (string -> string -> Map<string * GraphStructure.ProposedRelation,Graph.UniqueKey list> -> Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> (FormMessage -> unit) -> Bolero.Node) list) list) (currentRelations: Map<string,string * Map<string*GraphStructure.ProposedRelation,list<Graph.UniqueKey>>>) graph dispatch =
                     cond (currentRelations |> Map.tryFind (typeof<'a>.Name)) <| function
                     | Some (toggleSet, relationValues) -> concat [
                                 cond (elements.Length > 1) <| function

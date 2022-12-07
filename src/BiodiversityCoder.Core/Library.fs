@@ -59,7 +59,7 @@ module App =
             FolderLocation: string
             NodeCreationViewModels: Map<string, NodeViewModel>
             NodeCreationValidationErrors: Map<string, (string * string) list>
-            NodeCreationRelations: Map<string, string * Map<GraphStructure.ProposedRelation, Graph.UniqueKey list>> // type, selected toggle * Map<relation, node IDs>
+            NodeCreationRelations: Map<string, string * Map<string * GraphStructure.ProposedRelation, Graph.UniqueKey list>> // type, selected toggle * Map<relation, node IDs>
             RelationCreationViewModels: Map<string * string, Map<string,NodeViewModel * GraphStructure.ProposedRelation option>> // proposed is the computed relation. With this, can attempt to link to existing node.
             SelectedSource: SelectedSource option
             TaxonLookup: TaxonomicLookupModel
@@ -245,7 +245,7 @@ module App =
                                     let check =
                                         model.NodeCreationRelations 
                                         |> Map.tryFind nodeType.Name 
-                                        |> Option.map(fun (_,rels) -> rels |> Map.map(fun k v -> v |> Seq.map(fun _ -> k)) |> Map.toSeq |> Seq.collect snd)
+                                        |> Option.map(fun (_,rels) -> rels |> Map.map(fun k v -> v |> Seq.map(fun _ -> snd k)) |> Map.toSeq |> Seq.collect snd)
                                         |> Option.map validateRelations
                                     match check with
                                     | Some b -> if b then Ok () else Error "You have not entered all required details (relations)"
@@ -262,7 +262,7 @@ module App =
                                         |> Map.tryFind nodeType.Name 
                                         |> Option.map(fun (_,rels) ->
                                             rels |> Map.toList |> List.collect(fun (r,sinks) ->
-                                                sinks |> List.map(fun s -> ThisIsSource(s,r))))
+                                                sinks |> List.map(fun s -> ThisIsSource(s,snd r))))
                                         |> (fun o -> match o with | Some o -> o | None -> [])
                                         |> List.append requiredRelations
                                     
@@ -280,14 +280,14 @@ module App =
                                     | None -> m, Cmd.none) (fun e -> { model with Error = Some e }, Cmd.none)
                             | None -> { model with Error = Some "Cannot make node as graph is not loaded." }, Cmd.none
                     | None -> { model with Error = Some (sprintf "Could not find type of %s" nodeType.Name) }, Cmd.none
-            | EnterNodeRelationData(nodeType, toggleset, proposed, sinkKeys) -> 
+            | EnterNodeRelationData(nodeType, toggleset, proposed, name, sinkKeys) -> 
                 let x, y =
                     match model.NodeCreationRelations |> Map.tryFind nodeType with
                     | Some (toggleset, existing) -> 
                         if sinkKeys.IsEmpty 
-                        then model.NodeCreationRelations |> Map.add nodeType (toggleset, existing |> Map.remove proposed), model.RelationCreationViewModels |> Map.remove (nodeType, toggleset)
-                        else model.NodeCreationRelations |> Map.add nodeType (toggleset, existing |> Map.add proposed sinkKeys), model.RelationCreationViewModels
-                    | None -> model.NodeCreationRelations |> Map.add nodeType (toggleset, Map.ofList [proposed, sinkKeys]), model.RelationCreationViewModels
+                        then model.NodeCreationRelations |> Map.add nodeType (toggleset, existing |> Map.remove (name,proposed)), model.RelationCreationViewModels |> Map.remove (nodeType, toggleset)
+                        else model.NodeCreationRelations |> Map.add nodeType (toggleset, existing |> Map.add (name,proposed) sinkKeys), model.RelationCreationViewModels
+                    | None -> model.NodeCreationRelations |> Map.add nodeType (toggleset, Map.ofList [(name,proposed), sinkKeys]), model.RelationCreationViewModels
                 { model with NodeCreationRelations = x; RelationCreationViewModels = y }, Cmd.none
             | EnterRelationCreationData(nodeType, toggle, name, vm, proposed) -> 
                 let updatedVm = 
@@ -1029,12 +1029,12 @@ module App =
                                                                             ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" "" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
                                                                         ])
                                                                         ("Year", [
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date" "Required." (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
                                                                             ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: latest date" "" (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: latest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: latest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date" "Required." (fun _ -> Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
                                                                         ])
                                                                     ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                     ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
