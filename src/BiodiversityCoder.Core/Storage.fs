@@ -299,8 +299,10 @@ module Storage =
     let addProxiedTaxon' (edge:Population.ProxiedTaxon.ProxiedTaxonHyperEdge) graph = result {
         // Get the three included nodes:
         let! existingProxy = (unwrap graph).Graph |> GraphStructure.Nodes.tryFindProxy (fun n -> n = edge.InferredFrom), "proxy doesn't exist"
-        let! existingTaxon = (unwrap graph).Graph |> GraphStructure.Nodes.tryFindTaxon (fun n -> n = edge.InferredAs), "taxon doesn't exist"
         let! existingInfer = (unwrap graph).Graph |> GraphStructure.Nodes.tryFindInferenceMethod (fun n -> n = edge.InferredUsing), "infer doesn't exist"
+        let existingTaxa = 
+            (edge.InferredAs :: edge.InferredAsAdditional)
+            |> List.choose (fun t -> (unwrap graph).Graph |> GraphStructure.Nodes.tryFindTaxon (fun n -> n = t))
         let! proxiedGraph, addedNodes = addNodes graph [GraphStructure.PopulationNode GraphStructure.ProxiedTaxonNode]
         // Add relations that make the intermediate node encode the hyper-edge:
         return!
@@ -308,7 +310,11 @@ module Storage =
             |> addRelation addedNodes.Head existingProxy (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredFrom)
             |> Result.bind (addRelation addedNodes.Head existingProxy (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredFrom))
             |> Result.bind (addRelation addedNodes.Head existingInfer (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredUsing))
-            |> Result.bind (addRelation addedNodes.Head existingTaxon (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredAs))
+            |> Result.bind (fun graph ->
+                existingTaxa |> List.fold(fun g t -> 
+                    g |> Result.bind (addRelation addedNodes.Head t (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredAs))
+                ) (Ok graph)
+            )
             |> Result.lift(fun g -> g, addedNodes.Head |> fst |> fst)
     }
 
