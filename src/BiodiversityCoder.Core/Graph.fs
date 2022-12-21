@@ -247,8 +247,8 @@ module GraphStructure =
                     | Population.BioticProxies.BioticProxyNode.ContemporaneousWholeOrganism taxon -> sprintf "Contemporaneous Whole Organism: %s" taxon.Value
                     | Population.BioticProxies.BioticProxyNode.Morphotype m -> 
                         match m with
-                        | Population.BioticProxies.Megafossil (part,f) -> sprintf "Megafossil: %s" f.Value
-                        | Population.BioticProxies.Macrofossil (part,f) -> sprintf "Macrofossil: %s" f.Value
+                        | Population.BioticProxies.Megafossil (part,f) -> sprintf "Megafossil: %s (%s)" f.Value part.Value
+                        | Population.BioticProxies.Macrofossil (part,f) -> sprintf "Macrofossil: %s (%s)" f.Value part.Value
                         | Population.BioticProxies.Microfossil (group, name) ->
                             match group with
                             | Population.BioticProxies.MicrofossilGroup.Diatom -> sprintf "Morphotype: Diatom - %s" name.Value

@@ -210,6 +210,10 @@ module FieldDataTypes =
             | HistoryYearAD of calendarYear:float<AD>
             | HistoryYearBC of calendarYear:float<BC>
 
+        type MeasurementError =
+            | NoDatingErrorSpecified
+            | DatingErrorPlusMinus of measurementError:float<calYearBP>
+
 
     type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
     type Person = { FirstName: Text.ShortText; LastName: Text.ShortText }

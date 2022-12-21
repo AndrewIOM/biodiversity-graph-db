@@ -15,6 +15,9 @@ module Exposure =
             [<Name("Dating method")>]
             [<Help("Specify the dating method and associated raw date information. For radiocarbon, enter the raw uncalibrated date; if this is unavailable, enter the calibrated date and calibration curve used.")>]
             Date: OldDate.OldDatingMethod
+            [<Name("Dating measurement error")>]
+            [<Help("If there is an error bound (+/-) around the date, specify this here.")>]
+            MeasurementError: OldDate.MeasurementError
             [<Name("Material that was dated")>]
             [<Help("Example: leaves; ostracod shells. Note: this is a free field, but be as succinct as possible.")>]
             MaterialDated: Text.ShortText
