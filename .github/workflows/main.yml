@@ -61,7 +61,7 @@ jobs:
           dotnet-version: 6.0.x
 
       - name: Install MAUI Workload
-        run: dotnet workload install maui --ignore-failed-sources
+        run: dotnet workload install maui --ignore-failed-sources --sdk-version 6.0.404
 
       - name: Restore Dependencies
         run: dotnet restore src/BiodiversityCoder/BiodiversityCoder.csproj
