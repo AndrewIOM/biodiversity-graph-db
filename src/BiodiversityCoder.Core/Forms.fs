@@ -304,6 +304,7 @@ module ViewGen =
                 | t when t = typeof<FieldDataTypes.Text.ShortText> -> genStringInput existingValue 100 dispatch
                 | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput existingValue 9999 dispatch
                 | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput existingValue 2 dispatch
+                | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput existingValue 1000 dispatch
                 | t when t = typeof<float> -> genFloatInput existingValue dispatch
                 | t when t = typeof<float> -> genFloatInput existingValue dispatch
                 | t when t = typeof<int> -> genFloatInput existingValue dispatch

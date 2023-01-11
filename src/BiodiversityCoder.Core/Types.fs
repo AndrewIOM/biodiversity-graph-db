@@ -3,6 +3,89 @@ namespace BiodiversityCoder.Core
 open System
 open Newtonsoft.Json
 
+/// A result computation expression. 
+/// Source: http://www.fssnip.net/7UJ/title/ResultBuilder-Computational-Expression
+type ResultBuilder() =
+    let ofOption error = function Some s -> Ok s | None -> Error error
+    member __.Return(x) = Ok x
+    member __.ReturnFrom(m: Result<_, _>) = m
+    member __.Bind(m, f) = Result.bind f m
+    member __.Bind((m, error): (Option<'T> * 'E), f) = m |> ofOption error |> Result.bind f
+    member __.Zero() = None
+    member __.Combine(m, f) = Result.bind f m
+    member __.Delay(f: unit -> _) = f
+    member __.Run(f) = f()
+    member __.TryWith(m, h) =
+        try __.ReturnFrom(m)
+        with e -> h e
+    member __.TryFinally(m, compensation) =
+        try __.ReturnFrom(m)
+        finally compensation()
+    member __.Using(res:#IDisposable, body) =
+        __.TryFinally(body res, fun () -> match res with null -> () | disp -> disp.Dispose())
+    member __.While(guard, f) =
+        if not (guard()) then Ok () else
+        do f() |> ignore
+        __.While(guard, f)
+    member __.For(sequence:seq<_>, body) =
+        __.Using(sequence.GetEnumerator(), fun enum -> __.While(enum.MoveNext, __.Delay(fun () -> body enum.Current)))
+
+[<AutoOpen>]
+module Result =
+
+    let result = new ResultBuilder()
+
+    let succeed x = 
+        Ok x
+
+    let apply f result =
+        match f,result with
+        | Ok f, Ok x -> 
+            f x |> Ok 
+        | Error e, Ok _ 
+        | Ok _, Error e -> 
+            e |> Error
+        | Error e1, Error e2 -> 
+            e1 |> Error 
+
+    let lift f result =
+        let f' =  f |> succeed
+        apply f' result
+
+    let (<*>) = apply
+    let (<!>) = lift
+
+    let switch f = 
+        f >> succeed
+
+    let toOption result =
+        match result with
+        | Ok r -> Some r
+        | Error _ -> None
+
+    let ofList arg = 
+        (arg, Ok[]) ||> List.foldBack (fun t s ->
+        match t, s with
+        | Ok x, Ok xs -> Ok(x::xs)
+        | Error e, Ok _ -> Error e
+        | Ok _, Error es -> Error es
+        | Error e, Error es -> Error es )
+
+    let ofOption onError result =
+        match result with
+        | Some r -> Ok r
+        | None -> Error onError
+
+    let lower fOk fErr r =
+        match r with
+        | Ok o -> fOk o
+        | Error e -> fErr e
+    
+    let forceOk r =
+        match r with
+        | Ok o -> o
+        | Error e -> failwith e
+
 type SimpleValue =
     | Number of float
     | Text of string
@@ -149,6 +232,35 @@ module FieldDataTypes =
                 |> Result.toOption
             member this.Value = unwrapLon this
 
+        type Polygon with
+            static member TryCreate s =
+                match s with
+                | Text s -> 
+                    let m = System.Text.RegularExpressions.Regex.Match(s, "^POLYGON[ ]?\(\((.*)\)\)")
+                    if m.Success
+                    then
+                        let coords = m.Groups.[1].Value.Split(",") |> Array.map(fun s -> s.Split(" "))
+                        if Array.TrueForAll(coords, fun f -> f.Length = 2)
+                        then
+                            coords
+                            |> Array.map(fun c ->
+                                match Parse.parseDouble c.[0] |> Result.bind(fun l -> createLongitude l) with
+                                | Ok lon ->
+                                    match Parse.parseDouble c.[1] |> Result.bind(fun l -> createLatitude l) with
+                                    | Ok lat -> Ok (lat, lon)
+                                    | Error e -> Error e
+                                | Error e -> Error e
+                                )
+                            |> Array.toList
+                            |> Result.ofList
+                            |> Result.bind(fun l ->
+                                if l.Length < 3
+                                then Error "Cannot have less than three points for a polygon"
+                                else Ok <| Polygon l )
+                        else Error "Coordinates must be defined in format 'lon lat, lon lat, lon lat'"
+                    else Error "You must enter a polygon as a WKT format string, starting with POLYGON."
+                | _ -> Error "You must enter a polygon as a WKT format string, starting with POLYGON."
+                |> Result.toOption
 
     [<RequireQualifiedAccess>]
     module StratigraphicSequence =
@@ -233,86 +345,3 @@ module FieldDataTypes =
         | ``Creative Commons Attribution-NonCommercial-NoDerivatives 4 International``
         | ``No license specified``
         | Other of Text.ShortText
-
-/// A result computation expression. 
-/// Source: http://www.fssnip.net/7UJ/title/ResultBuilder-Computational-Expression
-type ResultBuilder() =
-    let ofOption error = function Some s -> Ok s | None -> Error error
-    member __.Return(x) = Ok x
-    member __.ReturnFrom(m: Result<_, _>) = m
-    member __.Bind(m, f) = Result.bind f m
-    member __.Bind((m, error): (Option<'T> * 'E), f) = m |> ofOption error |> Result.bind f
-    member __.Zero() = None
-    member __.Combine(m, f) = Result.bind f m
-    member __.Delay(f: unit -> _) = f
-    member __.Run(f) = f()
-    member __.TryWith(m, h) =
-        try __.ReturnFrom(m)
-        with e -> h e
-    member __.TryFinally(m, compensation) =
-        try __.ReturnFrom(m)
-        finally compensation()
-    member __.Using(res:#IDisposable, body) =
-        __.TryFinally(body res, fun () -> match res with null -> () | disp -> disp.Dispose())
-    member __.While(guard, f) =
-        if not (guard()) then Ok () else
-        do f() |> ignore
-        __.While(guard, f)
-    member __.For(sequence:seq<_>, body) =
-        __.Using(sequence.GetEnumerator(), fun enum -> __.While(enum.MoveNext, __.Delay(fun () -> body enum.Current)))
-
-[<AutoOpen>]
-module Result =
-
-    let result = new ResultBuilder()
-
-    let succeed x = 
-        Ok x
-
-    let apply f result =
-        match f,result with
-        | Ok f, Ok x -> 
-            f x |> Ok 
-        | Error e, Ok _ 
-        | Ok _, Error e -> 
-            e |> Error
-        | Error e1, Error e2 -> 
-            e1 |> Error 
-
-    let lift f result =
-        let f' =  f |> succeed
-        apply f' result
-
-    let (<*>) = apply
-    let (<!>) = lift
-
-    let switch f = 
-        f >> succeed
-
-    let toOption result =
-        match result with
-        | Ok r -> Some r
-        | Error _ -> None
-
-    let ofList arg = 
-        (arg, Ok[]) ||> List.foldBack (fun t s ->
-        match t, s with
-        | Ok x, Ok xs -> Ok(x::xs)
-        | Error e, Ok _ -> Error e
-        | Ok _, Error es -> Error es
-        | Error e, Error es -> Error es )
-
-    let ofOption onError result =
-        match result with
-        | Some r -> Ok r
-        | None -> Error onError
-
-    let lower fOk fErr r =
-        match r with
-        | Ok o -> fOk o
-        | Error e -> fErr e
-    
-    let forceOk r =
-        match r with
-        | Ok o -> o
-        | Error e -> failwith e

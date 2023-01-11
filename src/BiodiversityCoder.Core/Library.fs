@@ -568,6 +568,7 @@ module App =
                                     textf "%s. " c.Name.Value
                                     cond c.SamplingLocation <| function
                                     | FieldDataTypes.Geography.Site (lat,lon) -> textf "Occurs at the point %A DD, %A, DD" lat lon
+                                    | FieldDataTypes.Geography.Area poly -> textf "Occurs in an area: %s" <| poly.ToString()
                                     | FieldDataTypes.Geography.Locality (l,d,r,c) -> textf "Occurs at the locality %s (%s, %s, %s)" l.Value d.Value r.Value c.Value
                                     | FieldDataTypes.Geography.Region (r,c) -> textf "Occurs in the region %s (%s)" r.Value c.Value
                                     | FieldDataTypes.Geography.Country (c) -> textf "Occurs in the country %s" c.Value
