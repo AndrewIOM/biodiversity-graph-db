@@ -213,6 +213,7 @@ module FieldDataTypes =
 
         let private unwrapLat (Latitude l) = l
         let private unwrapLon (Longitude l) = l
+        let private unwrapPoly (Polygon l) = l
 
         type Latitude with 
             static member TryCreate s = 
@@ -261,6 +262,7 @@ module FieldDataTypes =
                     else Error "You must enter a polygon as a WKT format string, starting with POLYGON."
                 | _ -> Error "You must enter a polygon as a WKT format string, starting with POLYGON."
                 |> Result.toOption
+            member this.Value = unwrapPoly this
 
     [<RequireQualifiedAccess>]
     module StratigraphicSequence =
