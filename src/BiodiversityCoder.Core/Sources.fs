@@ -41,12 +41,21 @@ module Sources =
         Location: System.Uri
     }
 
+    and DatabaseDatasetNode = {
+        DatabaseAbbreviation: Text.ShortText
+        UniqueIdentifierInDatabase: Text.ShortText
+        Investigators: Person list
+        Title: Text.ShortText option
+        WebLocation: System.Uri option
+    }
+
     /// A graph database node representing a source of information.
     type Source =
         | Bibliographic of ArticleMetadataNode
         | GreyLiterature of GreySourceNode
         | DarkData of DarkDataNode
         | Database of DatabaseNode
+        | DatabaseEntry of DatabaseDatasetNode
 
     type SourceNode =
         | Included of Source * CodingProgress
@@ -75,11 +84,13 @@ module Sources =
         | HasTemporalExtent of SourceNode * Exposure.StudyTimeline.IndividualTimelineNode
         | UsesPrimarySource of SourceNode * SourceNode
         | UsedDatabase of SourceNode * SourceNode
+        | HasDataset of SourceNode * SourceNode
 
     and SourceRelation =
         | HasTemporalExtent
         | UsesPrimarySource
         | UsedDatabase of accessDate:System.DateOnly
+        | HasDataset
 
 
 module BibtexParser =

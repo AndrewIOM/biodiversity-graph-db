@@ -289,6 +289,7 @@ module GraphStructure =
                     | GreyLiterature n -> sprintf "Grey literature source: %s" n.Title.Value
                     | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
                     | Database n -> sprintf "Database: %s" n.FullName.Value
+                    | DatabaseEntry n -> sprintf "Database: %s - entry %s" n.UniqueIdentifierInDatabase.Value n.UniqueIdentifierInDatabase.Value
             | ExposureNode e ->
                 match e with
                 | YearNode y -> sprintf "%i cal yr BP" y.Year
@@ -365,6 +366,7 @@ module GraphStructure =
                         (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "") |> toLower |> friendlyKey
                 | DarkData n -> sprintf "darkdata_%s" (safeString n.Contact.LastName.Value) |> toLower |> friendlyKey
                 | Database n -> sprintf "database_%s" (safeString n.Abbreviation.Value) |> toLower |> friendlyKey
+                | DatabaseEntry n -> sprintf "database_%s_entry_%s" (safeString n.DatabaseAbbreviation.Value) (safeString n.UniqueIdentifierInDatabase.Value) |> toLower |> friendlyKey
         | ExposureNode e ->
             match e with
             | YearNode y -> sprintf "%iybp" y.Year |> toLower |> friendlyKey
@@ -529,6 +531,7 @@ module GraphStructure =
                 | HasTemporalExtent -> compare source sink rel (Relation.Source HasTemporalExtent)
                 | UsesPrimarySource -> compare source sink rel (Relation.Source UsesPrimarySource)
                 | UsedDatabase(accessDate) -> compare source sink rel (Relation.Source <| UsedDatabase accessDate)
+                | HasDataset -> compare source sink rel (Relation.Source UsesPrimarySource)
 
 
         /// Add a node relation to the graph, validating that the relation
