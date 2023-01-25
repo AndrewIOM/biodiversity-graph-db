@@ -300,7 +300,7 @@ module GraphStructure =
                 match o with
                 | MeasureNode n -> n.ToString()
 
-    let private safeString s = System.Text.RegularExpressions.Regex.Replace(System.Net.WebUtility.HtmlEncode s, @"[\W_]", replacement = "")
+    let private safeString s = System.Text.RegularExpressions.Regex.Replace(System.Net.WebUtility.HtmlEncode s, @"[^aA-zZ_ \-+0-9]", replacement = "")
     let private toLower (s:string) = s.ToLower()
 
     /// Makes a unique key based on the node type. Some nodes have a unique identifier, while
@@ -531,7 +531,7 @@ module GraphStructure =
                 | HasTemporalExtent -> compare source sink rel (Relation.Source HasTemporalExtent)
                 | UsesPrimarySource -> compare source sink rel (Relation.Source UsesPrimarySource)
                 | UsedDatabase(accessDate) -> compare source sink rel (Relation.Source <| UsedDatabase accessDate)
-                | HasDataset -> compare source sink rel (Relation.Source UsesPrimarySource)
+                | HasDataset -> compare source sink rel (Relation.Source HasDataset)
 
 
         /// Add a node relation to the graph, validating that the relation
