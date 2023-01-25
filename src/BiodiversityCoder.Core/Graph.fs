@@ -300,7 +300,7 @@ module GraphStructure =
                 match o with
                 | MeasureNode n -> n.ToString()
 
-    let private safeString s = System.Net.WebUtility.HtmlEncode s
+    let private safeString s = System.Text.RegularExpressions.Regex.Replace(System.Net.WebUtility.HtmlEncode s, @"[\W_]", replacement = "")
     let private toLower (s:string) = s.ToLower()
 
     /// Makes a unique key based on the node type. Some nodes have a unique identifier, while
