@@ -89,8 +89,13 @@ module Sources =
     and SourceRelation =
         | HasTemporalExtent
         | UsesPrimarySource
-        | UsedDatabase of accessDate:System.DateOnly
+        | UsedDatabase of accessDate:System.DateOnly option * subset:DatabaseSubset
         | HasDataset
+
+    and DatabaseSubset =
+        | AllRecordsInStudyScope
+        | SpecificRecords of firstId:Text.ShortText * additionalIds:Text.ShortText list
+        | ComplexSubset of methodDescription:Text.Text
 
 
 module BibtexParser =

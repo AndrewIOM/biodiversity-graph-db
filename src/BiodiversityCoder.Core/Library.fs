@@ -79,11 +79,19 @@ module App =
         AddingNewSource: bool
         SelectedSource: Graph.Atom<GraphStructure.Node,GraphStructure.Relation>
         ProposedLink: Graph.UniqueKey option
+        ProposedDatabaseLink: ProposedDatabaseLink option
         LinksToPrimarySources: (Graph.UniqueKey * string) option
         Screening: NodeViewModel
         AddBioticHyperedge: Map<Graph.UniqueKey, Graph.UniqueKey option * Graph.UniqueKey option * (Graph.UniqueKey list) option * Graph.UniqueKey option>
         ProblematicSection: string
         ProblematicSectionReason: string
+    }
+
+    and ProposedDatabaseLink = {
+        Id: Graph.UniqueKey option
+        AccessDate: string
+        AccessMethod: string
+        AccessDetails: string
     }
 
     and IsPrimarySource = Primary | Secondary | Unknown
@@ -112,6 +120,7 @@ module App =
         | MarkPrimary of IsPrimarySource
         | ToggleConnectNewOrExistingSource
         | ChangeProposedSourceLink of Graph.UniqueKey option
+        | ChangeProposedSourceDatabaseLink of ProposedDatabaseLink option
         | CompleteSection of string
         | ChangeCodingProblem of string * string
         | SubmitCodingProblem
@@ -158,7 +167,7 @@ module App =
             | Some g ->
                 match g |> Storage.atomByKey k with
                 | Some atom -> 
-                    { model with SelectedSource = Some { ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                    { model with SelectedSource = Some { ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                 | None -> { model with Error = Some <| sprintf "Could not find source with key %s [%A]" k.AsString k }, Cmd.none
         | SelectFolder ->
             model, Cmd.OfAsync.result(async {
@@ -509,6 +518,10 @@ module App =
                     |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
                 | None -> { model with Error = Some "Cannot modify source as graph is not loaded." }, Cmd.none
             | None -> model, Cmd.none
+        | ChangeProposedSourceDatabaseLink p -> 
+            match model.SelectedSource with
+            | Some s -> { model with SelectedSource = Some { s with ProposedDatabaseLink = p } }, Cmd.none
+            | None -> model, Cmd.none
 
 
     let _class = attr.``class``
@@ -632,6 +645,32 @@ module App =
             div [ _class "alert alert-warning" ] [ 
                 textf "A problem has been flagged when coding this source, which needs to be resolved. %s (section: %s)." r.Value s.Value ]
 
+    let asDatabaseLink (link:ProposedDatabaseLink) = 
+        result {
+            let! date =
+                if link.AccessDate = "" then Ok None
+                else
+                    let couldParse, parsedDate = System.DateOnly.TryParse(link.AccessDate)
+                    if not couldParse then Error "Date not in correct format"
+                    else Ok <| Some parsedDate
+            match link.AccessMethod with
+            | "all" -> return Sources.SourceRelation.UsedDatabase(date, Sources.AllRecordsInStudyScope)
+            | "specific" -> 
+                let! textIds = 
+                    link.AccessDetails.Split("\n")
+                    |> Array.map(fun s -> FieldDataTypes.Text.createShort s)
+                    |> Array.toList
+                    |> Result.ofList
+                let! ids = 
+                    if textIds.Length = 1 then Ok (textIds.[0], [])
+                    else if textIds.Length = 0 then Error "No IDs specified"
+                    else Ok (textIds.[0], List.tail textIds)
+                return Sources.SourceRelation.UsedDatabase(date, Sources.SpecificRecords ids)
+            | "complex" -> 
+                let! details = link.AccessDetails |> FieldDataTypes.Text.create
+                return Sources.SourceRelation.UsedDatabase(date, Sources.ComplexSubset details)
+            | _ -> return! Error "Not a valid access method"
+        } |> Result.toOption
 
     let view model dispatch =
         div [ _class "container-fluid" ] [
@@ -744,8 +783,41 @@ module App =
                         | Page.Sources -> concat [
                                 h2 [] [ text "Sources Manager" ]
                                 hr []
+                                p [] [ text "Sources may be imported in bulk from Colandr screening, or added individually." ]
 
-                                text "You can import sources from Colandr using the button below. The colandr raw output should be saved as 'colandr-titleabs-screen-results.csv' in the graph database folder."
+                                h3 [] [ text "Add an individual source - manually" ]
+                                hr []
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a journal article source" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "Manually add a record for a published journal article." ]
+                                        ViewGen.makeNodeForm<Sources.ArticleMetadataNode> (model.NodeCreationViewModels |> Map.tryFind "ArticleMetadataNode") [] (FormMessage >> dispatch)
+                                    ]
+                                ]
+                                br []
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a 'Dark Data' source" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "Manually add 'dark data'. Dark data is a dataset that has not been published, nor has it been digitised into an existing database." ]
+                                        ViewGen.makeNodeForm<Sources.DarkDataNode> (model.NodeCreationViewModels |> Map.tryFind "DarkDataNode") [] (FormMessage >> dispatch)
+                                    ]
+                                ]
+                                br []
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a 'Grey Literature' source" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "Manually add a 'grey literature' source. Compared to 'dark data' (above), 'grey literature' is a written source that has not been published or is otherwise not indexed in bibliographic databases. Examples some Government publications, internal reports etc." ]
+                                        ViewGen.makeNodeForm<Sources.GreySourceNode> (model.NodeCreationViewModels |> Map.tryFind "DarkDataNode") [] (FormMessage >> dispatch)
+                                    ]
+                                ]
+
+                                h3 [] [ text "Add one or many sources - from bibtex" ]
+                                hr []
+                                p [] [ text "You may import " ]
+
+                                h3 [] [ text "Bulk import from Colandr" ]
+                                hr []
+                                p [] [ text "You can import sources from Colandr using the button below. The colandr raw output should be saved as 'colandr-titleabs-screen-results.csv' in the graph database folder." ]
                                 button [ _class "btn btn-primary"; on.click (fun _ -> ImportColandr |> dispatch) ] [ text "Import from Colandr (title-abstract screening)" ]
 
                                 div [ _class "card mb-4" ] [
@@ -754,8 +826,6 @@ module App =
                                     textarea [ bind.input.string model.Import (fun s -> ChangeImportText s |> dispatch) ] []
                                     button [ on.click (fun _ -> ImportBibtex |> dispatch ) ] [ text "Import" ]
                                 ]
-
-                                text <| sprintf "%A" model
                             ]
 
                         | Page.Extract -> div [] [
@@ -924,6 +994,56 @@ module App =
                                                                             div [ _class "col-md-3" ] [
                                                                                 button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
                                                                             ]
+                                                                        ]
+                                                                        div [ _class "row g-3" ] [
+                                                                            div [ _class "col-md-3" ] [
+                                                                                label [] [ text "This source uses an existing database" ]
+                                                                            ]
+                                                                            cond source.ProposedDatabaseLink <| function
+                                                                            | Some link -> concat [
+                                                                                div [ _class "col-md-6" ] [
+                                                                                    select [ _class "form-select"; bind.change.string (if link.Id.IsSome then link.Id.Value.AsString else "") 
+                                                                                        (fun s -> { link with Id = s |> Graph.stringToKey |> Some } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                                    div [ _class "mb-3" ] [
+                                                                                        label [ _class "form-label" ] [ text "Date accessed" ]
+                                                                                        input [ _class "form-control"; bind.input.string link.AccessDate (fun d -> { link with AccessDate = d } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ]
+                                                                                        small [ _class "form-text" ] [ text "Enter the date in the format YYYY-MM-DD" ]
+                                                                                    ]
+                                                                                    select [ _class "form-select"; bind.change.string link.AccessMethod
+                                                                                        (fun s -> { link with AccessMethod = s } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ] [
+                                                                                            option [ attr.value "all" ] [ text "All records from database (within scope of study)" ]
+                                                                                            option [ attr.value "specific" ] [ text "Some specific records (by unique IDs)" ]
+                                                                                            option [ attr.value "complex" ] [ text "A specific method was used to derive a subset" ]
+                                                                                        ]                                                                                    
+                                                                                    cond (link.AccessMethod = "complex") <| function
+                                                                                    | true -> div [ _class "mb-3" ] [
+                                                                                        label [ _class "form-label" ] [ text "Method used" ]
+                                                                                        textarea [ _class "form-input"; bind.input.string link.AccessDetails (fun d -> { link with AccessDetails = d } |> Some |>ChangeProposedSourceDatabaseLink |> dispatch) ] []
+                                                                                        small [ _class "form-text" ] [ text "Briefly describe the method used to select records (e.g. the geographic or quality criteria)." ] ]
+                                                                                    | false ->
+                                                                                        cond (link.AccessMethod = "specific") <| function
+                                                                                        | true -> div [ _class "mb-3" ] [
+                                                                                            label [ _class "form-label" ] [ text "List of specific IDs" ]
+                                                                                            textarea [ _class "form-input"; bind.input.string link.AccessDetails (fun d -> { link with AccessDetails = d } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ] []
+                                                                                            small [ _class "form-text" ] [ text "Enter a list of specific IDs of records used from this database. Seperate each item with a line break." ] ]
+                                                                                        | false -> empty
+                                                                                ]
+                                                                                div [ _class "col-md-3" ] [
+                                                                                    cond (asDatabaseLink link) <| function
+                                                                                    | Some l ->
+                                                                                        button [ attr.disabled link.Id.IsNone; _class "btn btn-primary"; on.click(
+                                                                                            fun _ -> RelateNodes(
+                                                                                                source.SelectedSource |> fst |> fst, 
+                                                                                                link.Id.Value,
+                                                                                                l |> GraphStructure.ProposedRelation.Source) 
+                                                                                                    |> FormMessage |> dispatch; ChangeProposedSourceDatabaseLink None |> dispatch) ] [ text "Link" ]
+                                                                                    | None -> button [ attr.disabled true; _class "btn btn-primary" ] [ text "Link" ]
+                                                                                ]]
+                                                                            | None ->
+                                                                                div [ _class "col-md-6" ] [
+                                                                                    select [ _class "form-select"; bind.change.string ""
+                                                                                        (fun s -> {Id = s |> Graph.stringToKey |> Some; AccessDate = ""; AccessMethod = "all"; AccessDetails = "" } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                                ]
                                                                         ]
                                                                         hr []
                                                                         button [ _class "btn btn-primary"; on.click (fun _ -> CompleteSection "source-primary-or-secondary" |> dispatch) ] [ text "I've finished this question" ]

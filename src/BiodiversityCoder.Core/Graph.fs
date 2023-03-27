@@ -431,6 +431,9 @@ module GraphStructure =
                 match t with
                 // Source nodes:
                 | (t: System.Type) when t = typeof<Sources.SourceNode> -> n :?> Sources.SourceNode |> SourceNode |> Ok
+                | (t: System.Type) when t = typeof<Sources.ArticleMetadataNode> -> n :?> Sources.ArticleMetadataNode |> Bibliographic |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
+                | (t: System.Type) when t = typeof<Sources.DarkDataNode> -> n :?> Sources.DarkDataNode |> DarkData |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
+                | (t: System.Type) when t = typeof<Sources.GreySourceNode> -> n :?> Sources.GreySourceNode |> GreyLiterature |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
                 // Population nodes:
                 | (t: System.Type) when t = typeof<BioticProxies.BioticProxyNode> -> n :?> BioticProxies.BioticProxyNode |> BioticProxyNode |> PopulationNode |> Ok
                 | (t: System.Type) when t = typeof<Taxonomy.TaxonNode> -> n :?> Taxonomy.TaxonNode |> TaxonomyNode |> PopulationNode |> Ok
@@ -530,7 +533,7 @@ module GraphStructure =
                 match rel with
                 | HasTemporalExtent -> compare source sink rel (Relation.Source HasTemporalExtent)
                 | UsesPrimarySource -> compare source sink rel (Relation.Source UsesPrimarySource)
-                | UsedDatabase(accessDate) -> compare source sink rel (Relation.Source <| UsedDatabase accessDate)
+                | UsedDatabase(accessDate, subset) -> compare source sink rel (Relation.Source <| UsedDatabase(accessDate,subset))
                 | HasDataset -> compare source sink rel (Relation.Source HasDataset)
 
 

@@ -471,6 +471,19 @@ module ViewGen =
                         option [ attr.value node.Key.AsString ] [ text node.Value ]
         | None -> empty
 
+    /// Generate a list of select options based on available nodes in the graph.
+    let optionGenFiltered<'node> filter (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option) =
+        cond graph <| function
+        | Some g ->
+            cond (g.Nodes<'node>()) <| function
+                | None -> empty
+                | Some nodes ->
+                    forEach nodes <| fun node ->
+                        cond (filter node.Key) <| function
+                        | true -> option [ attr.value node.Key.AsString ] [ text node.Value ]
+                        | false -> empty
+        | None -> empty
+
 
     module RelationsForms =
 
