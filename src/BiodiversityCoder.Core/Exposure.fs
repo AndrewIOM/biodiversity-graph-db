@@ -22,10 +22,10 @@ module Exposure =
             [<Help("Example: leaves; ostracod shells. Note: this is a free field, but be as succinct as possible.")>]
             MaterialDated: Text.ShortText
             [<Name("Sample depth")>]
-            [<Help("If a sediment core, select 'Some' to enter the depth in centimetres (cm) at which this date was collected (either a depth range or single depth). Otherwise, select 'None'.")>]
+            [<Help("If a depositional record, select 'Some' to enter the depth, otherwise 'None'. Enter all depths in centimetres (cm). Typically, a band of depth (Xcm-Ycm) will be stated. However, the source may fail to state the depths of its dates, or may only present dates linked to qualitative time periods (e.g. Thule).")>]
             SampleDepth: StratigraphicSequence.DepthInCore option
             [<Name("Was this date discarded?")>]
-            [<Help("Select 'No' unless the date was provided but not used in the formation of an age-depth model (for a sediment core).")>]
+            [<Help("Select 'No' unless (a) an age-depth model was applied AND (b) the date was provided but not used in the formation of the age-depth model (for a sediment core).")>]
             Discarded: bool
         }
     
@@ -70,11 +70,17 @@ module Exposure =
             Name: Text.ShortText
             DesignatingAuthority: Text.ShortText
         }
+
+        type QualitativeLabelOutOfScopeNode = {
+            Name: Text.ShortText
+            DesignatingAuthority: Text.ShortText
+        }
     
     /// The master node type for 'exposure' peco element.
     type ExposureNode =
         | YearNode of TemporalIndex.CalYearNode
         | SliceLabelNode of TemporalIndex.QualitativeLabelNode
+        | OutOfScopeNode of TemporalIndex.QualitativeLabelOutOfScopeNode
         | TimelineNode of StudyTimeline.IndividualTimelineNode
         | DateNode of StudyTimeline.IndividualDateNode
 
@@ -97,6 +103,7 @@ module Exposure =
         // from individual temporal extent:
         | ExtentEarliest            of IndividualTimelineNode * CalYearNode
         | ExtentEarliestUncertainty of IndividualTimelineNode * CalYearNode
+        | ExtentEarliestOutOfScope  of IndividualTimelineNode * QualitativeLabelOutOfScopeNode
         | ExtentLatest              of IndividualTimelineNode * CalYearNode
         | ExtentLatestUncertainty   of IndividualTimelineNode * CalYearNode
         | IntersectsTime            of IndividualTimelineNode * QualitativeLabelNode
@@ -119,6 +126,7 @@ module Exposure =
         | UncertaintyYoungest           of exact:OldDate.OldDateSimple
         | ExtentEarliest
         | ExtentEarliestUncertainty
+        | ExtentEarliestOutOfScope      of exact:OldDate.OldDateSimple
         | ExtentLatest
         | ExtentLatestUncertainty
         | IntersectsTime

@@ -227,10 +227,11 @@ module GraphStructure =
                 | Excluded (s2,_,_) -> "SourceNode"
             | ExposureNode e ->
                 match e with
-                | YearNode y -> "CalYearNode"
-                | SliceLabelNode n -> "QualitativeLabelNode"
-                | TimelineNode n -> "IndividualTimelineNode"
-                | DateNode n -> "IndividualDateNode"
+                | YearNode _ -> "CalYearNode"
+                | SliceLabelNode _ -> "QualitativeLabelNode"
+                | TimelineNode _ -> "IndividualTimelineNode"
+                | DateNode _ -> "IndividualDateNode"
+                | OutOfScopeNode _ -> "QualitativeLabelOutOfScopeNode"
             | OutcomeNode o ->
                 match o with
                 | MeasureNode n -> "BiodiversityDimensionNode"
@@ -296,6 +297,7 @@ module GraphStructure =
                 | SliceLabelNode n -> sprintf "%s (designated by: %s)" n.Name.Value n.DesignatingAuthority.Value
                 | TimelineNode n -> "A study timeline"
                 | DateNode n -> "An individual date"
+                | OutOfScopeNode n -> sprintf "%s (designated by: %s)" n.Name.Value n.DesignatingAuthority.Value
             | OutcomeNode o ->
                 match o with
                 | MeasureNode n -> n.ToString()
@@ -373,6 +375,7 @@ module GraphStructure =
             | SliceLabelNode n -> sprintf "%s_by_%s" (safeString n.Name.Value) (safeString n.DesignatingAuthority.Value) |> toLower |> friendlyKey
             | TimelineNode _ -> guidKey (System.Guid.NewGuid())
             | DateNode _ -> guidKey (System.Guid.NewGuid())
+            | OutOfScopeNode n -> sprintf "%s_by_%s" (safeString n.Name.Value) (safeString n.DesignatingAuthority.Value) |> toLower |> friendlyKey
         | OutcomeNode o ->
             match o with
             | MeasureNode n ->
@@ -516,6 +519,7 @@ module GraphStructure =
                 | ExtentEarliestUncertainty -> compare source sink rel (Relation.Exposure ExtentEarliestUncertainty)
                 | ExtentLatest -> compare source sink rel (Relation.Exposure ExtentLatest)
                 | ExtentLatestUncertainty -> compare source sink rel (Relation.Exposure ExtentLatestUncertainty)
+                | ExtentEarliestOutOfScope t -> compare source sink rel (Relation.Exposure <| ExtentEarliestOutOfScope t)
                 | IntersectsTime -> compare source sink rel (Relation.Exposure IntersectsTime)
                 | HasProxyInfo -> compare source sink rel (Relation.Exposure HasProxyInfo)
                 | HasOrphanProxy -> compare source sink rel (Relation.Exposure HasOrphanProxy)

@@ -287,6 +287,7 @@ module FieldDataTypes =
             | DepthBand of lower:Depth * upper:Depth
             | DepthPoint of depth:Depth
             | DepthNotStated
+            | DepthQualitativeLevel of levelName:Text.ShortText
 
 
     [<RequireQualifiedAccess>]
