@@ -115,6 +115,7 @@ module Population =
             | PeatCore
             | Subfossil
             | LivingOrganism
+            | Excavation
             | OtherOrigin of origin:Text.ShortText
 
 

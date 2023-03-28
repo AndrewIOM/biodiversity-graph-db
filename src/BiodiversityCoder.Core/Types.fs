@@ -286,6 +286,7 @@ module FieldDataTypes =
         type DepthInCore = 
             | DepthBand of lower:Depth * upper:Depth
             | DepthPoint of depth:Depth
+            | DepthNotStated
 
 
     [<RequireQualifiedAccess>]
@@ -302,9 +303,13 @@ module FieldDataTypes =
         [<Measure>] type AD
         [<Measure>] type BC
 
+        type MeasurementError =
+            | NoDatingErrorSpecified
+            | DatingErrorPlusMinus of measurementError:float<calYearBP>
+
         type OldDatingMethod =
             | RadiocarbonUncalibrated of uncalibratedDate:float<uncalYearBP>
-            | RadiocarbonCalibrated of calibratedDate:float<calYearBP> * calibrationCurve:Text.ShortText
+            | RadiocarbonCalibrated of calibratedDate:float<calYearBP> * calibrationCurve:Text.ShortText * uncalibratedDate:float<uncalYearBP> option
             | Tephra of tephraName:Text.ShortText * date:OldDate
             | HistoricEvent of eventName:Text.ShortText * date:OldDate
             | Lead210 of concentration:float * date:OldDate
@@ -314,19 +319,34 @@ module FieldDataTypes =
 
         and OldDate =
             | BP of bpDate:float<uncalYearBP>
-            | CalYrBP of calibratedDate:float<calYearBP> * calibrationTechnique:Text.ShortText option
+            | CalYrBP of calibratedDate:CalibratedRadiocarbonDate
             | HistoryYearAD of calendarYear:float<AD>
             | HistoryYearBC of calendarYear:float<BC>
 
+        and CalibratedRadiocarbonDate = {
+            [<Name("Calibrated date")>]
+            [<Help("Enter the date in units 'cal yr BP'. If the source uses BCE or similar, convert the date manually to 'cal yr BP' for this field.")>]
+            CalibratedDate: float<calYearBP>
+            [<Name("Calibration curve or method")>]
+            [<Help("If a calibration curve was used (e.g. IntCal98), enter its name here. Alternatively, older papers may reference specific sources for a calibration method (e.g. Clark 1975). Enter the author and year here in this format: A, B and X 1986.")>]
+            CalibrationCurve: Text.ShortText
+            [<Name("Uncalibrated date")>]
+            [<Help("Does the source include the raw (uncalibrated) radiocarbon date? If so, enter it here as a BP date. If the uncalibrated date is given as a BCE date or similar, manually convert the date to 'BP'.")>]
+            UncalibratedDate: float<uncalYearBP> option
+            [<Name("Uncalibrated date: measurement error")>]
+            [<Help("If there is an error bound (+/-) around the uncalibrated date, specify this here.")>]
+            UncalibratedDateError: MeasurementError
+        }
+
+        /// This simple date representation is used on the relations between
+        /// a date node and the cal yr BP time series. This helps us keep track
+        /// of how each temporal extent relates to the harmonised (calibrated years)
+        /// master time series.
         and OldDateSimple =
             | BP of bpDate:float<uncalYearBP>
             | CalYrBP of calibratedDate:float<calYearBP> * calibrationTechnique:Text.ShortText option
             | HistoryYearAD of calendarYear:float<AD>
             | HistoryYearBC of calendarYear:float<BC>
-
-        type MeasurementError =
-            | NoDatingErrorSpecified
-            | DatingErrorPlusMinus of measurementError:float<calYearBP>
 
 
     type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
