@@ -111,13 +111,12 @@ module Population =
         }
 
         and SampleOrigin =
-            | LakeSediment
-            | PeatCore
+            | LakeSediment of depths:StratigraphicSequence.DepthExtent
+            | PeatCore of depths:StratigraphicSequence.DepthExtent
+            | Excavation of depths:StratigraphicSequence.DepthExtent
             | Subfossil
             | LivingOrganism
-            | Excavation
-            | OtherOrigin of origin:Text.ShortText
-
+            | OtherOrigin of origin:Text.ShortText * depths:StratigraphicSequence.DepthExtent option
 
     /// Relations that go from the exposure elements as the source
     type PopulationNodeRelation =

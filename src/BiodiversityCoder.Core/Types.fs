@@ -273,7 +273,7 @@ module FieldDataTypes =
         type Depth = private Depth of depth:float<cm>
 
         let createDepth i =
-            if i > 0. then Ok (Depth (i * 1.<cm>)) else Error "Depth cannot be negative"
+            if i >= 0. then Ok (Depth (i * 1.<cm>)) else Error "Depth cannot be negative"
 
         type Depth with 
             static member TryCreate s = 
@@ -289,6 +289,11 @@ module FieldDataTypes =
             | DepthNotStated
             | DepthQualitativeLevel of levelName:Text.ShortText
 
+        /// Represents the extent of depths within a statigraphic record (e.g. the top
+        /// is usually 0cm, and the base may be a metre or more down).
+        type DepthExtent =
+            | DepthRange of topDepth:Depth * bottomDepth:Depth
+            | DepthRangeNotStated
 
     [<RequireQualifiedAccess>]
     module OldDate =
