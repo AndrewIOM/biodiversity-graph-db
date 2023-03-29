@@ -315,7 +315,7 @@ module FieldDataTypes =
 
         type OldDatingMethod =
             | RadiocarbonUncalibrated of uncalibratedDate:float<uncalYearBP>
-            | RadiocarbonCalibrated of calibratedDate:float<calYearBP> * calibrationCurve:Text.ShortText * uncalibratedDate:float<uncalYearBP> option
+            | RadiocarbonCalibrated of calibratedDate:CalibratedRadiocarbonDate
             | Tephra of tephraName:Text.ShortText * date:OldDate
             | HistoricEvent of eventName:Text.ShortText * date:OldDate
             | Lead210 of concentration:float * date:OldDate
