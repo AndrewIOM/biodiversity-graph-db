@@ -49,6 +49,10 @@ module App =
         | Population
         | Exposure
         | Outcome
+        | Scenario of ScenarioPage
+
+    and ScenarioPage =
+        | WoodRing
 
     type Model =
         {
@@ -240,6 +244,24 @@ module App =
                             |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
                         | None -> { model with Error = Some "Cannot screen source as graph is not loaded." }, Cmd.none
                     | None -> model, Cmd.none
+                // TODO remove hardcoding of scenarios -> custom functions
+                else if typeof<Scenarios.WoodRingScenario> = nodeType 
+                then 
+                    match model.Graph with
+                    | Some g ->
+                        match model.SelectedSource with
+                        | Some source ->
+                            match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
+                            | Some (formData: NodeViewModel) -> 
+                                Create.createFromViewModel nodeType formData
+                                |> Result.bind (Scenarios.tryMakeScenario typeof<Scenarios.WoodRingScenario>)
+                                |> Result.bind(fun vm -> 
+                                    Scenarios.Automators.automateTreeRing vm source.SelectedSource g)
+                                |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
+                            | None -> { model with Error = Some "TODO" }, Cmd.none
+                        | None -> { model with Error = Some "TODO" }, Cmd.none
+                    | None -> { model with Error = Some "TODO" }, Cmd.none
                 else
                     match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
                     | Some (formData: NodeViewModel) -> 
@@ -692,11 +714,23 @@ module App =
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources ] dispatch
+                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
                     cond model.Page <| function
+                        | Page.Scenario scenario ->
+                            cond scenario <| function
+                            | WoodRing -> concat [
+                                h2 [] [ text Scenarios.WoodRingScenario.Title ]
+                                p [] [ text Scenarios.WoodRingScenario.Description ]
+                                cond model.SelectedSource <| function
+                                | None -> p [] [ text "Select a source in the 'extract' view to use the tree ring scenario." ]
+                                | Some s -> concat [
+                                    p [] [ textf "Selected source: %s" "Unknown" ]
+                                    Scenarios.scenarioGen<Scenarios.WoodRingScenario> (model.NodeCreationViewModels |> Map.tryFind "WoodRingScenario") (FormMessage >> dispatch)
+                                ]
+                            ]
                         | Page.Population -> concat [
                                 h2 [] [ text "Population" ]
                                 p [] [ text "List existing population nodes and create new ones." ]
