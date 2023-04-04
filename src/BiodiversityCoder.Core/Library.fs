@@ -709,12 +709,19 @@ module App =
             | _ -> return! Error "Not a valid access method"
         } |> Result.toOption
 
+    let sourceTitle = function
+        | Sources.Source.Bibliographic b -> b.Title
+        | Sources.Source.DarkData d -> Some d.Details
+        | Sources.Source.Database d -> Some d.FullName
+        | Sources.Source.DatabaseEntry _ -> None
+        | Sources.Source.GreyLiterature g -> Some g.Title
+
     let view model dispatch =
         div [ _class "container-fluid" ] [
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing ] dispatch
+                sidebarView [ Page.Extract; Page.Scenario WoodRing; Page.Population; Page.Exposure; Page.Outcome; Page.Sources ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
@@ -722,14 +729,33 @@ module App =
                         | Page.Scenario scenario ->
                             cond scenario <| function
                             | WoodRing -> concat [
-                                h2 [] [ text Scenarios.WoodRingScenario.Title ]
+                                h2 [] [ textf "Scenario: %s" Scenarios.WoodRingScenario.Title ]
                                 p [] [ text Scenarios.WoodRingScenario.Description ]
                                 cond model.SelectedSource <| function
                                 | None -> p [] [ text "Select a source in the 'extract' view to use the tree ring scenario." ]
-                                | Some s -> concat [
-                                    p [] [ textf "Selected source: %s" "Unknown" ]
-                                    Scenarios.scenarioGen<Scenarios.WoodRingScenario> (model.NodeCreationViewModels |> Map.tryFind "WoodRingScenario") (FormMessage >> dispatch)
-                                ]
+                                | Some s -> 
+                                    cond (s.SelectedSource |> fst |> snd) <| function
+                                    | GraphStructure.Node.SourceNode sn ->
+                                        cond sn <| function
+                                        | Sources.SourceNode.Included (s,_) -> concat [
+                                            cond (sourceTitle s) <| function
+                                            | Some title -> p [] [ textf "Selected source: %s" title.Value ]
+                                            | None -> p [] [ text "Unknown source selected" ]
+                                            div [ _class "card mb-4" ] [
+                                                div [ _class "card-header text-bg-secondary" ] [ text "Source Status: Included" ]
+                                                div [ _class "card-body" ] [
+                                                    div [ _class "alert alert-success" ] [ text "This source has been included at full-text level. Please code information as stated below." ]
+                                                    div [ _class "card mb-4" ] [
+                                                        div [ _class "card-header text-bg-secondary" ] [ text "Add a tree ring timeline" ]
+                                                        div [ _class "card-body" ] [
+                                                            p [] [ text "Add a new timeline and associated site to the currently selected source (in the extract tab). All information is required. After creating, go back to the 'extract' tab and mark sections as complete as normal." ]
+                                                            Scenarios.scenarioGen<Scenarios.WoodRingScenario> (model.NodeCreationViewModels |> Map.tryFind "WoodRingScenario") (FormMessage >> dispatch)
+                                                        ]
+                                                    ]
+                                                ]
+                                            ]]
+                                        | _ -> text "You may only use scenarios on 'Included' sources."
+                                    | _ -> empty
                             ]
                         | Page.Population -> concat [
                                 h2 [] [ text "Population" ]

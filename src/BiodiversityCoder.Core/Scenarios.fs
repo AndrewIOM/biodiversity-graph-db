@@ -17,18 +17,27 @@ module Scenarios =
     /// Special case of wood (tree/shrub) ring chronologies, which
     /// only require minimal details of space and time for a single taxon.
     and WoodRingScenario = {
+        [<Name("Should taxa be created if they don't exist in the graph?")>]
+        [<Help("If false, will require you to create the proxy and taxon nodes in the 'Population' tab. If true, will automatically create these nodes if they don't exist.")>]
+        CreateTaxon: bool
+        [<Name("Site name")>]
         SiteName: Text.ShortText
         Location: Geography.SamplingLocation
+        [<Name("Earliest year")>]
+        [<Help("This should be the earliest age of the plants, rather than the start of a dendro-chronology. Note the oldest plant is usually older than the start of the chronology.")>]
         EarliestYear: float<OldDate.AD>
+        [<Name("Latest year")>]
         LatestYear: float<OldDate.AD>
+        [<Name("Year in which the wood disc or increment core was collected")>]
         CollectionDate: float<OldDate.AD>
+        [<Name("Taxonomic rank of identification")>]
         Taxon: WoodTaxon
     } with 
-        static member Title = "Wood ring"
-        static member Description = "Some description"
+        static member Title = "Wood ring chronology"
+        static member Description = "For sources that construct standard tree or shrub ring chronologies, use this scenario to quickly enter details for a particular site."
         
     and WoodTaxon =
-        | Genus of name:Text.ShortText
+        | Genus of genus:Text.ShortText
         | Species of generic:Text.ShortText * specific:Text.ShortText * authorship:Text.ShortText
         | Subspecies of generic:Text.ShortText * specific:Text.ShortText * subspecific:Text.ShortText * authorship:Text.ShortText
 
