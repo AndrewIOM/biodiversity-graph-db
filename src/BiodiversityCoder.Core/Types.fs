@@ -188,6 +188,8 @@ module FieldDataTypes =
         type Longitude = private Longitude of float<DD>
         [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type Polygon = private Polygon of (Latitude * Longitude) list
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type CoordinateDMS = private CoordinateDMS of string
 
         let createLatitude lat =
             if lat >= -89.9 && lat <= 89.9 then lat * 1.<DD> |> Latitude |> Ok
@@ -202,8 +204,14 @@ module FieldDataTypes =
             | p when p < 2 -> Error "Polygons must have at least three points"
             | _ -> points |> Polygon |> Ok 
 
+        let createCoordinate coordString =
+            if System.Text.RegularExpressions.Regex.IsMatch(coordString, "^([0-9]{1,2})[:|°]([0-9]{1,2})[:|'|′]?([0-9]{1,2}(?:\.[0-9]+){0,1})?[\"|″]([N|S]),([0-9]{1,3})[:|°]([0-9]{1,2})[:|'|′]?([0-9]{1,2}(?:\.[0-9]+){0,1})?[\"|″]([E|W])$")
+            then coordString |> CoordinateDMS |> Ok
+            else Error "Coordinate was not in the format: 40°26'46\"N,79°01'00\"W"
+
         type SamplingLocation =
             | Site      of latitude:Latitude * longitude:Longitude
+            | SiteDMS   of coordinate:CoordinateDMS
             | Area      of polygon:Polygon
             | Locality  of locality:Text.ShortText * district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
             | District  of district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
@@ -214,6 +222,7 @@ module FieldDataTypes =
         let private unwrapLat (Latitude l) = l
         let private unwrapLon (Longitude l) = l
         let private unwrapPoly (Polygon l) = l
+        let private unwrapCoordDms (CoordinateDMS c) = c
 
         type Latitude with 
             static member TryCreate s = 
@@ -263,6 +272,15 @@ module FieldDataTypes =
                 | _ -> Error "You must enter a polygon as a WKT format string, starting with POLYGON."
                 |> Result.toOption
             member this.Value = unwrapPoly this
+
+        type CoordinateDMS with 
+            static member TryCreate s = 
+                match s with 
+                | Text s -> createCoordinate s
+                | _ -> Error "Not a valid coorindate value"
+                |> Result.toOption
+            member this.Value = unwrapCoordDms this
+
 
     [<RequireQualifiedAccess>]
     module StratigraphicSequence =
@@ -321,7 +339,7 @@ module FieldDataTypes =
             | Lead210 of concentration:float * date:OldDate
             | Radiocaesium of concentration:float * date:OldDate
             | CollectionDate of yearCollected:float<AD>
-            // | DepositionalZone of zoneName:Text.ShortText
+            | DepositionalZone of zoneName:Text.ShortText
 
         and OldDate =
             | BP of bpDate:float<uncalYearBP>
