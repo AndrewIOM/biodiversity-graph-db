@@ -49,6 +49,10 @@ module App =
         | Population
         | Exposure
         | Outcome
+        | Scenario of ScenarioPage
+
+    and ScenarioPage =
+        | WoodRing
 
     type Model =
         {
@@ -240,6 +244,24 @@ module App =
                             |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
                         | None -> { model with Error = Some "Cannot screen source as graph is not loaded." }, Cmd.none
                     | None -> model, Cmd.none
+                // TODO remove hardcoding of scenarios -> custom functions
+                else if typeof<Scenarios.WoodRingScenario> = nodeType 
+                then 
+                    match model.Graph with
+                    | Some g ->
+                        match model.SelectedSource with
+                        | Some source ->
+                            match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
+                            | Some (formData: NodeViewModel) -> 
+                                Create.createFromViewModel nodeType formData
+                                |> Result.bind (Scenarios.tryMakeScenario typeof<Scenarios.WoodRingScenario>)
+                                |> Result.bind(fun vm -> 
+                                    Scenarios.Automators.automateTreeRing vm source.SelectedSource g)
+                                |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
+                            | None -> { model with Error = Some "TODO" }, Cmd.none
+                        | None -> { model with Error = Some "TODO" }, Cmd.none
+                    | None -> { model with Error = Some "TODO" }, Cmd.none
                 else
                     match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
                     | Some (formData: NodeViewModel) -> 
@@ -687,16 +709,54 @@ module App =
             | _ -> return! Error "Not a valid access method"
         } |> Result.toOption
 
+    let sourceTitle = function
+        | Sources.Source.Bibliographic b -> b.Title
+        | Sources.Source.DarkData d -> Some d.Details
+        | Sources.Source.Database d -> Some d.FullName
+        | Sources.Source.DatabaseEntry _ -> None
+        | Sources.Source.GreyLiterature g -> Some g.Title
+
     let view model dispatch =
         div [ _class "container-fluid" ] [
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources ] dispatch
+                sidebarView [ Page.Extract; Page.Scenario WoodRing; Page.Population; Page.Exposure; Page.Outcome; Page.Sources ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
                     cond model.Page <| function
+                        | Page.Scenario scenario ->
+                            cond scenario <| function
+                            | WoodRing -> concat [
+                                h2 [] [ textf "Scenario: %s" Scenarios.WoodRingScenario.Title ]
+                                p [] [ text Scenarios.WoodRingScenario.Description ]
+                                cond model.SelectedSource <| function
+                                | None -> p [] [ text "Select a source in the 'extract' view to use the tree ring scenario." ]
+                                | Some s -> 
+                                    cond (s.SelectedSource |> fst |> snd) <| function
+                                    | GraphStructure.Node.SourceNode sn ->
+                                        cond sn <| function
+                                        | Sources.SourceNode.Included (s,_) -> concat [
+                                            cond (sourceTitle s) <| function
+                                            | Some title -> p [] [ textf "Selected source: %s" title.Value ]
+                                            | None -> p [] [ text "Unknown source selected" ]
+                                            div [ _class "card mb-4" ] [
+                                                div [ _class "card-header text-bg-secondary" ] [ text "Source Status: Included" ]
+                                                div [ _class "card-body" ] [
+                                                    div [ _class "alert alert-success" ] [ text "This source has been included at full-text level. Please code information as stated below." ]
+                                                    div [ _class "card mb-4" ] [
+                                                        div [ _class "card-header text-bg-secondary" ] [ text "Add a tree ring timeline" ]
+                                                        div [ _class "card-body" ] [
+                                                            p [] [ text "Add a new timeline and associated site to the currently selected source (in the extract tab). All information is required. After creating, go back to the 'extract' tab and mark sections as complete as normal." ]
+                                                            Scenarios.scenarioGen<Scenarios.WoodRingScenario> (model.NodeCreationViewModels |> Map.tryFind "WoodRingScenario") (FormMessage >> dispatch)
+                                                        ]
+                                                    ]
+                                                ]
+                                            ]]
+                                        | _ -> text "You may only use scenarios on 'Included' sources."
+                                    | _ -> empty
+                            ]
                         | Page.Population -> concat [
                                 h2 [] [ text "Population" ]
                                 p [] [ text "List existing population nodes and create new ones." ]

@@ -15,6 +15,7 @@
     <Compile Include="Seed.fs" />
     <Compile Include="Storage.fs" />
     <Compile Include="Forms.fs" />
+    <Compile Include="Scenarios.fs" />
     <Compile Include="Library.fs" />
   </ItemGroup>
   <ItemGroup>
