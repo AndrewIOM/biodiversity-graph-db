@@ -305,7 +305,7 @@ module ViewGen =
                 | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput existingValue 9999 dispatch
                 | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput existingValue 2 dispatch
                 | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput existingValue 1000 dispatch
-                | t when t = typeof<float> -> genFloatInput existingValue dispatch
+                | t when t = typeof<FieldDataTypes.Geography.CoordinateDMS> -> genStringInput existingValue 100 dispatch
                 | t when t = typeof<float> -> genFloatInput existingValue dispatch
                 | t when t = typeof<int> -> genFloatInput existingValue dispatch
                 | t when t = typeof<bool> -> genTrueFalseToggle existingValue dispatch
@@ -418,8 +418,14 @@ module ViewGen =
                                 // Get all of the field's values
                                 cond vm <| function
                                 | Fields f ->
-                                    // TODO May be a simple value OR a record type (with lots of fields. Render this as nested fields)...
-                                    forEach (s.GetFields()) <| fun field -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
+                                    forEach (s.GetFields()) <| fun field -> 
+                                        cond (f |> Map.tryFind field.Name) <| function
+                                        | Some fv -> 
+                                            cond fv <| function
+                                            | Fields fv ->
+                                                renderPropertyInfo fv field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
+                                            | _ -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
+                                        | None -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
                                 | _ ->
                                     // None of the fields have any entered values yet. Render all of them cleanly.
                                     forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)

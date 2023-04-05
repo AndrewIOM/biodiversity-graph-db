@@ -764,12 +764,7 @@ module App =
                                 p [] [ 
                                     text "Use the forms on this page to add new options for taxonomic nodes."
                                     text "Plant taxa are created by validating names against a taxonomic backbone." ]
-
-                                cond model.Error <| function
-                                | Some e -> div [ _class "alert alert-danger" ] [ 
-                                        text e
-                                        button [ _class "btn"; on.click (fun _ -> DismissError |> dispatch) ] [ text "Dismiss" ] ]
-                                | None -> empty
+                                errorAlert model dispatch
 
                                 // Allow linking to taxonomic backbone here.
                                 div [ _class "card mb-4" ] [
@@ -853,8 +848,31 @@ module App =
                                 // p [] [ text "In addition to the taxon node, there are nodes representing the common or vernacular names of species, genera, or families. Adding these is purely for the purposes of public interpretation of the graph database." ]
                                 // ViewGen.makeNodeForm<Population.Taxonomy.VernacularTaxonLabelNode> (model.NodeCreationViewModels |> Map.tryFind "VernacularTaxonLabelNode") [] (FormMessage >> dispatch)
                             ]
-                        | Page.Exposure -> div [] [ text "Exposure page" ]
-                        | Page.Outcome -> div [] [ text "Outcome page" ]
+                        | Page.Exposure -> div [] [
+                                h2 [] [ text "Exposure" ]
+                                p [] [ text "The timeline information is pre-configured within the graph node structure. However, you may add qualitative time labels that represent certain periods in time." ]
+                                errorAlert model dispatch
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a qualitative time label" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "A qualitative label represents a temporal extent on a certain authority. For example, a pollen zone may be defined by a certain author in a certain region, which is used to 'date' cores by other authors. Alternatively, they may be internationally defined periods, such as Marine Isotope Stages." ]
+                                        cond model.Graph <| function
+                                        | Some g -> concat [
+                                                ViewGen.RelationsForms.relationsToggle<Exposure.TemporalIndex.QualitativeLabelNode> "Temporal Index" [
+                                                    ("Temporal Extent", [
+                                                        ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Earliest year" "The calendar year BP (cal yr BP) that is the earliest included year." (Exposure.ExposureRelation.EarliestTime |> GraphStructure.ProposedRelation.Exposure)
+                                                        ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.CalYearNode> "Latest year" "The calendar year BP (cal yr BP) that is the latest included year." (Exposure.ExposureRelation.LatestTime |> GraphStructure.ProposedRelation.Exposure)
+                                                    ])] model.NodeCreationRelations g (FormMessage >> dispatch)
+                                                ViewGen.makeNodeFormWithRelations<Exposure.TemporalIndex.QualitativeLabelNode> (fun savedRelations ->
+                                                    (ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.LatestTime) savedRelations) &&
+                                                        (ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.EarliestTime) savedRelations))
+                                                    (model.NodeCreationViewModels |> Map.tryFind "QualitativeLabelNode") [] (FormMessage >> dispatch)
+                                            ]
+                                        | None -> empty
+                                    ]
+                                ]
+                            ]
+                        | Page.Outcome -> div [] [ text "There are no options to display" ]
                         | Page.Sources -> concat [
                                 h2 [] [ text "Sources Manager" ]
                                 hr []
@@ -889,18 +907,19 @@ module App =
                                 h3 [] [ text "Add one or many sources - from bibtex" ]
                                 hr []
                                 p [] [ text "You may import " ]
-
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Import new sources" ]
+                                    div [ _class "card-body" ] [
+                                        text "Enter a bibtex-format file below."
+                                        textarea [ bind.input.string model.Import (fun s -> ChangeImportText s |> dispatch) ] []
+                                        button [ on.click (fun _ -> ImportBibtex |> dispatch ) ] [ text "Import" ]
+                                    ]
+                                ]
                                 h3 [] [ text "Bulk import from Colandr" ]
                                 hr []
                                 p [] [ text "You can import sources from Colandr using the button below. The colandr raw output should be saved as 'colandr-titleabs-screen-results.csv' in the graph database folder." ]
                                 button [ _class "btn btn-primary"; on.click (fun _ -> ImportColandr |> dispatch) ] [ text "Import from Colandr (title-abstract screening)" ]
 
-                                div [ _class "card mb-4" ] [
-                                    div [ _class "card-header text-bg-secondary" ] [ text "Import new sources" ]
-                                    text "Enter a bibtex-format file below."
-                                    textarea [ bind.input.string model.Import (fun s -> ChangeImportText s |> dispatch) ] []
-                                    button [ on.click (fun _ -> ImportBibtex |> dispatch ) ] [ text "Import" ]
-                                ]
                             ]
 
                         | Page.Extract -> div [] [
@@ -1050,7 +1069,7 @@ module App =
                                                                             ]
                                                                             div [ _class "col-md-6" ] [
                                                                                 select [ _class "form-select"; bind.change.string (if source.ProposedLink.IsSome then source.ProposedLink.Value.AsString else "") 
-                                                                                    (fun s -> s |> Graph.stringToKey |> Some |> ChangeProposedSourceLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                                    (fun s -> s |> Graph.stringToKey |> Some |> ChangeProposedSourceLink |> dispatch) ] [ ViewGen.optionGenFiltered<Sources.SourceNode> (fun k -> k.AsString.Split("_").[1] <> "database") model.Graph ]
                                                                             ]
                                                                             div [ _class "col-md-3" ] [
                                                                                 button [ attr.disabled source.ProposedLink.IsNone; _class "btn btn-primary"; on.click(
@@ -1067,7 +1086,8 @@ module App =
                                                                             ]
                                                                             div [ _class "col-md-6" ] []
                                                                             div [ _class "col-md-3" ] [
-                                                                                button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
+                                                                                em [] [ text "To add new sources, use the 'Sources' tab to the left." ]
+                                                                                // button [ _class "btn btn-primary"; on.click(fun _ -> ToggleConnectNewOrExistingSource |> dispatch) ] [ text "Add a new source" ]
                                                                             ]
                                                                         ]
                                                                         div [ _class "row g-3" ] [
@@ -1078,7 +1098,7 @@ module App =
                                                                             | Some link -> concat [
                                                                                 div [ _class "col-md-6" ] [
                                                                                     select [ _class "form-select"; bind.change.string (if link.Id.IsSome then link.Id.Value.AsString else "") 
-                                                                                        (fun s -> { link with Id = s |> Graph.stringToKey |> Some } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                                        (fun s -> { link with Id = s |> Graph.stringToKey |> Some } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ] [ ViewGen.optionGenFiltered<Sources.SourceNode> (fun k -> k.AsString.Split("_").Length = 3 && k.AsString.Split("_").[1] = "database") model.Graph ]
                                                                                     div [ _class "mb-3" ] [
                                                                                         label [ _class "form-label" ] [ text "Date accessed" ]
                                                                                         input [ _class "form-control"; bind.input.string link.AccessDate (fun d -> { link with AccessDate = d } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ]
@@ -1117,7 +1137,7 @@ module App =
                                                                             | None ->
                                                                                 div [ _class "col-md-6" ] [
                                                                                     select [ _class "form-select"; bind.change.string ""
-                                                                                        (fun s -> {Id = s |> Graph.stringToKey |> Some; AccessDate = ""; AccessMethod = "all"; AccessDetails = "" } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ] [ ViewGen.optionGen<Sources.SourceNode> model.Graph ]
+                                                                                        (fun s -> {Id = s |> Graph.stringToKey |> Some; AccessDate = ""; AccessMethod = "all"; AccessDetails = "" } |> Some |> ChangeProposedSourceDatabaseLink |> dispatch) ] [ ViewGen.optionGenFiltered<Sources.SourceNode> (fun k -> k.AsString.Split("_").Length = 3 && k.AsString.Split("_").[1] = "database") model.Graph ]
                                                                                 ]
                                                                         ]
                                                                         hr []
@@ -1198,9 +1218,8 @@ module App =
                                                                                             ])
                                                                                         ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                                         ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualDateNode> (fun savedRelations ->
-                                                                                            //(ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.OccursWithin) savedRelations)
-                                                                                            //|| 
-                                                                                            (ViewGen.RelationsForms.Validation.hasOneByCase "TimeEstimate" savedRelations)
+                                                                                            (ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.OccursWithin) savedRelations)
+                                                                                            || (ViewGen.RelationsForms.Validation.hasOneByCase "TimeEstimate" savedRelations)
                                                                                         ) (model.NodeCreationViewModels |> Map.tryFind "IndividualDateNode") [
                                                                                             ThisIsSink ((timelineAtom |> fst |> fst), Exposure.ExposureRelation.ConstructedWithDate |> GraphStructure.ProposedRelation.Exposure)
                                                                                         ] (FormMessage >> dispatch)

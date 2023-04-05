@@ -102,7 +102,7 @@ module Population =
         type ContextNode = {
             [<Help("A short description for the place.")>]
             Name: Text.ShortText
-            [<Help("Enter the location for the specific timeline in the granularity specified in the text. Locations may be specified as a spatial point ('Site') or polygon ('Area'), or as political units. If using political units, attempt to ensure that the unit conforms to those in GADM https://www.gadm.org/maps.html. If entering a polygon, enter your polygon in WKT format (e.g. POLYGON((26.41 41.79,43.11 41.79,43.11 32.87,26.41 32.87,26.41 41.79)). You can make WKT format polygons on this web page: http://arthur-e.github.io/Wicket/sandbox-gmaps3.html")>]
+            [<Help("Enter the location for the specific timeline in the granularity specified in the text. Locations may be specified as a spatial point ('Site') or polygon ('Area'), or as political units. If using a point ('site'), you may enter coordinates in decimal degrees (DD) using 'Site' or in DMS (format: 40°26'46\"N,79°58'56\"W) using 'SiteDMS'. If using political units, attempt to ensure that the unit conforms to those in GADM https://www.gadm.org/maps.html. If entering a polygon, enter your polygon in WKT format (e.g. POLYGON((26.41 41.79,43.11 41.79,43.11 32.87,26.41 32.87,26.41 41.79)). You can make WKT format polygons on this web page: http://arthur-e.github.io/Wicket/sandbox-gmaps3.html")>]
             SamplingLocation: Geography.SamplingLocation
             [<Help("The parent material from which the 'Outcome' (biodiversity measure) has been measured. Example: pollen from a midden is subfossil.")>]
             SampleOrigin: SampleOrigin

@@ -13,10 +13,10 @@ module Exposure =
         /// time-series, for example a stratigraphic sequence.
         type IndividualDateNode = {
             [<Name("Dating method")>]
-            [<Help("Specify the dating method and associated raw date information. For radiocarbon, enter the raw uncalibrated date; if this is unavailable, enter the calibrated date and calibration curve used.")>]
+            [<Help("Specify the dating method and associated raw date information.")>]
             Date: OldDate.OldDatingMethod
             [<Name("Dating measurement error")>]
-            [<Help("If there is an error bound (+/-) around the date, specify this here.")>]
+            [<Help("If there is an error bound (+/-) around the date, specify this here. For a calibrated radiocarbon date, enter the error bound for the calibrated date here.")>]
             MeasurementError: OldDate.MeasurementError
             [<Name("Material that was dated")>]
             [<Help("Example: leaves; ostracod shells. Note: this is a free field, but be as succinct as possible.")>]
