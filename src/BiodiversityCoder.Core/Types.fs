@@ -337,8 +337,14 @@ module FieldDataTypes =
             [<Help("If a calibration curve was used (e.g. IntCal98), enter its name here. Alternatively, older papers may reference specific sources for a calibration method (e.g. Clark 1975). Enter the author and year here in this format: A, B and X 1986.")>]
             CalibrationCurve: Text.ShortText
             [<Name("Uncalibrated date")>]
-            [<Help("Does the source include the raw (uncalibrated) radiocarbon date? If so, enter it here as a BP date. If the uncalibrated date is given as a BCE date or similar, manually convert the date to 'BP'.")>]
-            UncalibratedDate: float<uncalYearBP> option
+            [<Help("Does the source include the raw (uncalibrated) radiocarbon date?")>]
+            UncalibratedDate: UncalDate option
+        }
+
+        and UncalDate = {
+            [<Name("Uncalibrated date")>]
+            [<Help("Enter the uncalibrated date here as a BP date. If the uncalibrated date is given as a BCE date or similar, manually convert the date to 'BP'.")>]
+            Date: float<uncalYearBP>
             [<Name("Uncalibrated date: measurement error")>]
             [<Help("If there is an error bound (+/-) around the uncalibrated date, specify this here.")>]
             UncalibratedDateError: MeasurementError
