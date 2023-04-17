@@ -12,7 +12,7 @@ module GraphVisualisation =
     let nodes (graph:Graph.Graph<GraphStructure.Node,GraphStructure.Relation>) =
         graph |> Seq.map(fun atom ->
             let label = (atom |> fst |> snd).ToString()
-            node (atom |> Graph.getAtomId |> string) [ CyParam.label label ] )
+            node ((atom |> fst |> snd).DisplayName()) [ CyParam.label label ] )
 
     let relations (graph:Graph.Graph<GraphStructure.Node,GraphStructure.Relation>) =
         graph |> Seq.collect(fun atom ->
@@ -29,7 +29,7 @@ module GraphVisualisation =
                     CyParam.color "#A00975"
                 ]
         |> CyGraph.withSize(800, 400)
-        |> HTML.toEmbeddedHTML
+        |> HTML.toCytoHTML
 
 
 module App =
@@ -53,6 +53,7 @@ module App =
 
     and ScenarioPage =
         | WoodRing
+        | PalaeoCore
 
     type Model =
         {
@@ -87,8 +88,19 @@ module App =
         LinksToPrimarySources: (Graph.UniqueKey * string) option
         Screening: NodeViewModel
         AddBioticHyperedge: Map<Graph.UniqueKey, Graph.UniqueKey option * Graph.UniqueKey option * (Graph.UniqueKey list) option * Graph.UniqueKey option>
+        AddBioticHyperedgeBatch: Map<Graph.UniqueKey, BioticHyperedgeBatch>
         ProblematicSection: string
         ProblematicSectionReason: string
+    }
+
+    and BioticHyperedgeBatch = {
+        Group: Population.BioticProxies.MicrofossilGroup
+        InferenceMethod: Graph.UniqueKey option
+        Outcome: Graph.UniqueKey option
+        UsePlaceholderTaxon: bool
+        UsePlaceholderInfer: bool
+        LinkedTaxa: Map<int, (Graph.UniqueKey * Graph.UniqueKey * (Graph.UniqueKey list) * Graph.UniqueKey)>
+        UnlinkedTaxa: Map<int,string * string>
     }
 
     and ProposedDatabaseLink = {
@@ -121,6 +133,13 @@ module App =
         | LookupTaxon of LookupTaxonMessage
         | ChangeProxiedTaxonVm of timeline:Graph.UniqueKey * proxy:Graph.UniqueKey option * inference:Graph.UniqueKey option * taxon:(Graph.UniqueKey list) option * measure:Graph.UniqueKey option
         | SubmitProxiedTaxon of timeline:Graph.UniqueKey
+        | UseBatchModeForProxiedTaxon of timeline: Graph.UniqueKey * bool
+        | SetBatchModeAutofill of timeline:Graph.UniqueKey * Population.BioticProxies.MicrofossilGroup * Graph.UniqueKey option * Graph.UniqueKey option * bool * bool
+        | ChangeBatchUnverifiedProxiedTaxon of timeline:Graph.UniqueKey * int * string * string
+        | ChangeBatchVerifiedTaxon of timeline:Graph.UniqueKey * int * (Graph.UniqueKey * Graph.UniqueKey * (Graph.UniqueKey list) * Graph.UniqueKey)
+        | RemoveBatchVerifiedTaxon of timeline:Graph.UniqueKey * int
+        | RemoveBatchUnverifiedTaxon of timeline:Graph.UniqueKey * int
+        | ValidateOrConfirmBatch of timeline:Graph.UniqueKey
         | MarkPrimary of IsPrimarySource
         | ToggleConnectNewOrExistingSource
         | ChangeProposedSourceLink of Graph.UniqueKey option
@@ -133,6 +152,64 @@ module App =
         | ChangeFormFields of TaxonomicLookupModel
         | RunLookup
         | SaveTaxonResult
+
+    let isBatchMode timeline cont (model:Model) =
+        match model.SelectedSource with
+        | None -> { model with Error = Some "Source was not selected." }, Cmd.none
+        | Some source ->
+            match source.AddBioticHyperedgeBatch |> Map.tryFind timeline with
+            | None -> { model with Error = Some "Not in batch mode." }, Cmd.none
+            | Some batch -> cont (source,batch)
+
+    let commitProxiedTaxon (proxyId: Graph.UniqueKey) (inferId:Graph.UniqueKey) (taxaIds:Graph.UniqueKey list) (measureId:Graph.UniqueKey) timelineId g = result {
+        // Unique keys to nodes
+        let! proxy = 
+            Storage.atomByKey proxyId g 
+            |> Result.ofOption "Could not find proxy node"
+            |> Result.bind(fun ((i,n),adj) ->
+                match n with
+                | GraphStructure.Node.PopulationNode p ->
+                    match p with
+                    | GraphStructure.BioticProxyNode x -> Ok x
+                    | _ -> Error "Not a biotic proxy node"
+                | _ -> Error "Not a biotic proxy node" )
+        let! infer = 
+            Storage.atomByKey inferId g 
+            |> Result.ofOption "Could not find inference node"
+            |> Result.bind(fun ((i,n),adj) ->
+                match n with
+                | GraphStructure.Node.PopulationNode p ->
+                    match p with
+                    | GraphStructure.InferenceMethodNode x -> Ok x
+                    | _ -> Error "Not an inference method node"
+                | _ -> Error "Not an inference method node" )
+        let! taxa = 
+            if taxaIds.Length = 0 then Error "Must specify at least one taxon"
+            else
+                taxaIds |> List.map(fun taxonId ->
+                    Storage.atomByKey taxonId g 
+                    |> Result.ofOption "Could not find taxon node"
+                    |> Result.bind(fun ((i,n),adj) ->
+                        match n with
+                        | GraphStructure.Node.PopulationNode p ->
+                            match p with
+                            | GraphStructure.TaxonomyNode x -> Ok x
+                            | _ -> Error "Not a taxonomy node"
+                        | _ -> Error "Not a taxonomy node" )
+                ) |> Result.ofList
+
+        let! updatedGraph, hyperEdgeId = Storage.addProxiedTaxon proxy taxa.Head taxa.Tail infer g
+        
+        // Save (1) outcome measure from hyperedge to outcome node, and (2) relation from timeline to hyperedge.
+        let! timeline = Storage.atomByKey timelineId updatedGraph |> Result.ofOption "Could not find timeline"
+        let! hyperedge = Storage.atomByKey hyperEdgeId updatedGraph |> Result.ofOption "Could not find new hyperedge"
+        let! outcomeNode = Storage.atomByKey measureId updatedGraph |> Result.ofOption "Could not find new hyperedge"
+        let! updatedGraphWithRelations = 
+            Storage.addRelation hyperedge outcomeNode (GraphStructure.ProposedRelation.Population Population.PopulationRelation.MeasuredBy) updatedGraph
+            |> Result.bind (Storage.addRelation timeline hyperedge (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.HasProxyInfo))
+        return updatedGraphWithRelations
+    }
+
 
     let update (openFolder:unit -> Task<string>) message model =
         match message with
@@ -171,7 +248,13 @@ module App =
             | Some g ->
                 match g |> Storage.atomByKey k with
                 | Some atom -> 
-                    { model with SelectedSource = Some { ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                    match model.SelectedSource with
+                    | Some alreadySelected ->
+                        // If re-loading the same source, don't bin all of the form entry in progress
+                        if alreadySelected.SelectedSource |> fst |> fst = k
+                        then { model with SelectedSource = Some { AddBioticHyperedgeBatch = alreadySelected.AddBioticHyperedgeBatch; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                        else { model with SelectedSource = Some { AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                    | None -> { model with SelectedSource = Some { AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                 | None -> { model with Error = Some <| sprintf "Could not find source with key %s [%A]" k.AsString k }, Cmd.none
         | SelectFolder ->
             model, Cmd.OfAsync.result(async {
@@ -254,12 +337,42 @@ module App =
                             match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
                             | Some (formData: NodeViewModel) -> 
                                 Create.createFromViewModel nodeType formData
-                                |> Result.bind (Scenarios.tryMakeScenario typeof<Scenarios.WoodRingScenario>)
+                                |> Result.lift (fun n -> n :?> Scenarios.WoodRingScenario)
                                 |> Result.bind(fun vm -> 
                                     Scenarios.Automators.automateTreeRing vm source.SelectedSource g)
                                 |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
                                 |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
                             | None -> { model with Error = Some "TODO" }, Cmd.none
+                        | None -> { model with Error = Some "TODO" }, Cmd.none
+                    | None -> { model with Error = Some "TODO" }, Cmd.none
+                else if typeof<Scenarios.PalaeoCoreScenario> = nodeType 
+                then 
+                    match model.Graph with
+                    | Some g ->
+                        match model.SelectedSource with
+                        | Some source ->
+                            let keys =
+                                source.AddBioticHyperedge
+                                |> Map.tryFind Scenarios.palaeoCustomKey
+                                |> Option.bind(fun (_,i,_,m) ->
+                                    if i.IsNone || m.IsNone then None
+                                    else Some (Storage.atomByKey i.Value g, Storage.atomByKey m.Value g)
+                                )
+                            match keys with
+                            | None -> { model with Error = Some "Enter an inference method and outcome first" }, Cmd.none
+                            | Some (infer,outcome) ->
+                                if infer.IsNone || outcome.IsNone
+                                then  { model with Error = Some "Enter an inference method and outcome first" }, Cmd.none
+                                else
+                                    match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
+                                    | Some (formData: NodeViewModel) -> 
+                                        Create.createFromViewModel nodeType formData
+                                        |> Result.lift (fun n -> n :?> Scenarios.PalaeoCoreScenario)
+                                        |> Result.bind(fun vm -> 
+                                            Scenarios.Automators.automatePalaeoCore vm source.SelectedSource infer.Value outcome.Value g)
+                                        |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                        |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
+                                    | None -> { model with Error = Some "TODO" }, Cmd.none
                         | None -> { model with Error = Some "TODO" }, Cmd.none
                     | None -> { model with Error = Some "TODO" }, Cmd.none
                 else
@@ -387,6 +500,103 @@ module App =
                         match add () with
                         | Ok g -> { model with Graph = Some g; TaxonLookup = { Result = None; Rank = "Family"; Family = ""; Genus = ""; Species = ""; Authorship = "" }}, Cmd.none
                         | Error e -> { model with Error = Some e }, Cmd.none
+        
+        // --- Start batch mode messages ---
+        | UseBatchModeForProxiedTaxon (timeline, mode) ->
+            match model.SelectedSource with
+            | None -> { model with Error = Some "Source was not selected." }, Cmd.none
+            | Some source ->
+                match mode with
+                | true -> { model with SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { Group = Population.BioticProxies.Pollen; Outcome = None; InferenceMethod = None; UsePlaceholderInfer = false; UsePlaceholderTaxon = false; LinkedTaxa = Map.empty; UnlinkedTaxa = Map.empty } } }, Cmd.none
+                | false -> { model with SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.remove timeline } }, Cmd.none
+        
+        | SetBatchModeAutofill (timeline, group,infer, outcome,usePlaceholderTaxon, usePlaceholderInfer) ->
+            model |> isBatchMode timeline (fun (source, batch) ->
+                let infer = if usePlaceholderInfer then Some <| Graph.UniqueKey.FriendlyKey("inferencemethodnode", "atlas_unknown not yet coded") else infer
+                { model with SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { batch with Group = group; Outcome = outcome; InferenceMethod = infer; UsePlaceholderTaxon = usePlaceholderTaxon; UsePlaceholderInfer = usePlaceholderInfer } } }, Cmd.none)
+            
+        | ChangeBatchUnverifiedProxiedTaxon (timeline, i,morph,taxa) ->
+            model |> isBatchMode timeline (fun (source, batch) ->
+                let updatedUnverified =
+                    if batch.UnlinkedTaxa.IsEmpty then batch.UnlinkedTaxa |> Map.add 1 (morph, taxa)
+                    else 
+                        let key = if i = 999 then (fst (Map.maxKeyValue batch.UnlinkedTaxa) + 1) else i
+                        batch.UnlinkedTaxa |> Map.add key (morph, taxa)
+                { model with SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { batch with UnlinkedTaxa = updatedUnverified } } }, Cmd.none)
+
+        | ChangeBatchVerifiedTaxon (timeline, i,x) ->
+            model |> isBatchMode timeline (fun (source, batch) ->
+                let updatedLinked = batch.LinkedTaxa |> Map.add i x
+                { model with SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { batch with LinkedTaxa = updatedLinked } } }, Cmd.none)
+        
+        | RemoveBatchVerifiedTaxon (timeline, i) ->
+            model |> isBatchMode timeline (fun (source, batch) ->
+                let updatedLinked = batch.LinkedTaxa |> Map.remove i
+                { model with SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { batch with LinkedTaxa = updatedLinked } } }, Cmd.none)
+
+        | RemoveBatchUnverifiedTaxon (timeline, i) ->
+            model |> isBatchMode timeline (fun (source, batch) ->
+                let updatedUnlinked = batch.UnlinkedTaxa |> Map.remove i
+                { model with SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { batch with UnlinkedTaxa = updatedUnlinked } } }, Cmd.none)
+
+        | ValidateOrConfirmBatch timeline ->
+            model |> isBatchMode timeline (fun (source, batch) ->
+                if not batch.LinkedTaxa.IsEmpty && batch.UnlinkedTaxa.IsEmpty then // Confirm batch
+                    match model.Graph with
+                    | Some g ->
+                        let updatedGraph =
+                            Map.fold(fun state k (proxyId,inferId,taxaIds,measureId) ->
+                                state |> Result.bind(fun g -> commitProxiedTaxon proxyId inferId taxaIds measureId timeline g)) (Ok g) batch.LinkedTaxa
+                        match updatedGraph with
+                        | Ok saved -> { model with Graph = Some saved; SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.remove timeline } }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst))
+                        | Error e -> { model with Error = Some e }, Cmd.none
+                    | None -> { model with Error = Some "Graph is not loaded." }, Cmd.none
+                else if batch.UnlinkedTaxa.Count > 0 then
+                    match model.Graph with
+                    | Some g ->
+
+                        // Validate unlinked taxa.
+                        // For each one, move it IF it is valid. Otherwise, leave where it is.
+                        let newLinked, newUnlinked, errors = 
+                            Map.fold(fun (linked, unlinked, errors) k (morphotype, taxaList:string) ->
+
+                                let taxa = 
+                                    if batch.UsePlaceholderTaxon
+                                    then [| "Unknown (not yet coded)" |]
+                                    else taxaList.Split(";") |> Array.map(fun s -> s.Trim())
+                                if Seq.isEmpty taxa || batch.InferenceMethod.IsNone || batch.Outcome.IsNone
+                                then (linked, unlinked, sprintf "Some details were blank for entry %i" k :: errors)
+                                else
+                                    let r = result {
+                                        let! taxaNodes = 
+                                            taxa 
+                                            |> Seq.map(fun t -> t |> FieldDataTypes.Text.createShort)
+                                            |> Seq.toList |> Result.ofList
+                                        let! morphotypeNode = 
+                                            morphotype |> FieldDataTypes.Text.createShort 
+                                            |> Result.lift(fun t -> 
+                                                Population.BioticProxies.Microfossil(batch.Group, t) |> Population.BioticProxies.Morphotype)
+                                        
+                                        let taxonExists = 
+                                            taxaNodes
+                                            |> List.choose(fun t -> Storage.tryFindTaxonByName t g)
+                                        let morphotypeExists = Storage.tryFindProxy morphotypeNode g
+
+                                        if taxonExists.Length = taxa.Length && morphotypeExists.IsSome
+                                        then return (linked |> Map.add k (morphotypeExists.Value |> fst |> fst, batch.InferenceMethod.Value, (taxonExists |> List.map(fun t -> t |> fst |> fst)), batch.Outcome.Value), unlinked |> Map.remove k, errors)
+                                        else return (linked, unlinked, sprintf "At least one node doesn't exist already for %i (%s / %s)" k morphotype taxaList :: errors)
+                                    }
+                                    match r with
+                                    | Ok r -> r
+                                    | Error e -> (linked, unlinked, e :: errors)
+                                ) (batch.LinkedTaxa, batch.UnlinkedTaxa, []) batch.UnlinkedTaxa
+                        let isError = if errors.Length = 0 then None else Some (String.concat ", and " errors)
+                        { model with Error = isError; SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { batch with LinkedTaxa = newLinked; UnlinkedTaxa = newUnlinked } } }, Cmd.none
+                    | None -> model, Cmd.none
+                else { model with Error = Some "Cannot validate or confirm taxa when none are specified" }, Cmd.none
+            )
+        // --- End batch mode messages ---
+
         | ChangeProxiedTaxonVm(timeline, proxy, inference, taxon, measure) -> 
             match model.SelectedSource with
             | None -> { model with Error = Some "Source was not selected." }, Cmd.none
@@ -399,59 +609,7 @@ module App =
                 | Some source -> 
                     match source.AddBioticHyperedge |> Map.tryFind timelineId with
                     | Some (proxyId, inferId, taxaIds, measureId) ->
-
-                        let saveEdge () = result {
-                            // Unique keys to nodes
-                            let! proxy = 
-                                Storage.atomByKey proxyId.Value g 
-                                |> Result.ofOption "Could not find proxy node"
-                                |> Result.bind(fun ((i,n),adj) ->
-                                    match n with
-                                    | GraphStructure.Node.PopulationNode p ->
-                                        match p with
-                                        | GraphStructure.BioticProxyNode x -> Ok x
-                                        | _ -> Error "Not a biotic proxy node"
-                                    | _ -> Error "Not a biotic proxy node" )
-                            let! infer = 
-                                Storage.atomByKey inferId.Value g 
-                                |> Result.ofOption "Could not find inference node"
-                                |> Result.bind(fun ((i,n),adj) ->
-                                    match n with
-                                    | GraphStructure.Node.PopulationNode p ->
-                                        match p with
-                                        | GraphStructure.InferenceMethodNode x -> Ok x
-                                        | _ -> Error "Not an inference method node"
-                                    | _ -> Error "Not an inference method node" )
-                            let! taxa = 
-                                if taxaIds.Value.Length = 0 then Error "Must specify at least one taxon"
-                                else
-                                    taxaIds.Value |> List.map(fun taxonId ->
-                                        Storage.atomByKey taxonId g 
-                                        |> Result.ofOption "Could not find taxon node"
-                                        |> Result.bind(fun ((i,n),adj) ->
-                                            match n with
-                                            | GraphStructure.Node.PopulationNode p ->
-                                                match p with
-                                                | GraphStructure.TaxonomyNode x -> Ok x
-                                                | _ -> Error "Not a taxonomy node"
-                                            | _ -> Error "Not a taxonomy node" )
-                                    ) |> Result.ofList
-
-                            let! updatedGraph, hyperEdgeId = Storage.addProxiedTaxon proxy taxa.Head taxa.Tail infer g
-                            
-                            // Save (1) outcome measure from hyperedge to outcome node, and (2) relation from timeline to hyperedge.
-                            let! timeline = Storage.atomByKey timelineId updatedGraph |> Result.ofOption "Could not find timeline"
-                            let! hyperedge = Storage.atomByKey hyperEdgeId updatedGraph |> Result.ofOption "Could not find new hyperedge"
-                            let! outcomeNode = 
-                                measureId
-                                |> Result.ofOption "No outcome measure ID specified"
-                                |> Result.bind(fun key -> Storage.atomByKey key updatedGraph |> Result.ofOption "Could not find new hyperedge")
-                            let! updatedGraphWithRelations = 
-                                Storage.addRelation hyperedge outcomeNode (GraphStructure.ProposedRelation.Population Population.PopulationRelation.MeasuredBy) updatedGraph
-                                |> Result.bind (Storage.addRelation timeline hyperedge (GraphStructure.ProposedRelation.Exposure Exposure.ExposureRelation.HasProxyInfo))
-                            return updatedGraphWithRelations
-                        }
-                        match saveEdge () with
+                        match commitProxiedTaxon proxyId.Value inferId.Value taxaIds.Value measureId.Value timelineId g with
                         | Ok saved -> { model with Graph = Some saved }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst))
                         | Error e -> { model with Error = Some e }, Cmd.none
                     | None -> { model with Error = Some "No hyper edge details found" }, Cmd.none
@@ -716,47 +874,75 @@ module App =
         | Sources.Source.DatabaseEntry _ -> None
         | Sources.Source.GreyLiterature g -> Some g.Title
 
+    let scenarioView<'a> title description formTitle formDescription extraElements (model:Model) dispatch =
+        concat [
+            h2 [] [ textf "Scenario: %s" title ]
+            p [] [ text description ]
+            cond model.SelectedSource <| function
+            | None -> p [] [ text "Select a source in the 'extract' view to use the scenario." ]
+            | Some s -> 
+                cond (s.SelectedSource |> fst |> snd) <| function
+                | GraphStructure.Node.SourceNode sn ->
+                    cond sn <| function
+                    | Sources.SourceNode.Included (s,_) -> concat [
+                        cond (sourceTitle s) <| function
+                        | Some title -> p [] [ textf "Selected source: %s" title.Value ]
+                        | None -> p [] [ text "Unknown source selected" ]
+                        div [ _class "card mb-4" ] [
+                            div [ _class "card-header text-bg-secondary" ] [ text "Source Status: Included" ]
+                            div [ _class "card-body" ] [
+                                div [ _class "alert alert-success" ] [ text "This source has been included at full-text level. Please code information as stated below." ]
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text formTitle ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text formDescription ]
+                                        extraElements
+                                        Scenarios.scenarioGen<'a> (model.NodeCreationViewModels |> Map.tryFind (typeof<'a>).Name) (FormMessage >> dispatch)
+                                    ]
+                                ]
+                            ]
+                        ]]
+                    | _ -> text "You may only use scenarios on 'Included' sources."
+                | _ -> empty
+        ]
+
+    let asMicrofossilGroup = function
+        | s when s = "Pollen" -> Population.BioticProxies.MicrofossilGroup.Pollen
+        | s when s = "Ostracod" -> Population.BioticProxies.MicrofossilGroup.Ostracod
+        | s when s = "PlantMacrofossil" -> Population.BioticProxies.MicrofossilGroup.PlantMacrofossil
+        | s when s = "Diatom" -> Population.BioticProxies.MicrofossilGroup.Diatom
+        | _ -> Population.BioticProxies.MicrofossilGroup.Pollen
+
     let view model dispatch =
         div [ _class "container-fluid" ] [
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Scenario WoodRing; Page.Population; Page.Exposure; Page.Outcome; Page.Sources ] dispatch
+                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario PalaeoCore ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
                     cond model.Page <| function
                         | Page.Scenario scenario ->
                             cond scenario <| function
-                            | WoodRing -> concat [
-                                h2 [] [ textf "Scenario: %s" Scenarios.WoodRingScenario.Title ]
-                                p [] [ text Scenarios.WoodRingScenario.Description ]
-                                cond model.SelectedSource <| function
-                                | None -> p [] [ text "Select a source in the 'extract' view to use the tree ring scenario." ]
-                                | Some s -> 
-                                    cond (s.SelectedSource |> fst |> snd) <| function
-                                    | GraphStructure.Node.SourceNode sn ->
-                                        cond sn <| function
-                                        | Sources.SourceNode.Included (s,_) -> concat [
-                                            cond (sourceTitle s) <| function
-                                            | Some title -> p [] [ textf "Selected source: %s" title.Value ]
-                                            | None -> p [] [ text "Unknown source selected" ]
-                                            div [ _class "card mb-4" ] [
-                                                div [ _class "card-header text-bg-secondary" ] [ text "Source Status: Included" ]
-                                                div [ _class "card-body" ] [
-                                                    div [ _class "alert alert-success" ] [ text "This source has been included at full-text level. Please code information as stated below." ]
-                                                    div [ _class "card mb-4" ] [
-                                                        div [ _class "card-header text-bg-secondary" ] [ text "Add a tree ring timeline" ]
-                                                        div [ _class "card-body" ] [
-                                                            p [] [ text "Add a new timeline and associated site to the currently selected source (in the extract tab). All information is required. After creating, go back to the 'extract' tab and mark sections as complete as normal." ]
-                                                            Scenarios.scenarioGen<Scenarios.WoodRingScenario> (model.NodeCreationViewModels |> Map.tryFind "WoodRingScenario") (FormMessage >> dispatch)
-                                                        ]
-                                                    ]
-                                                ]
-                                            ]]
-                                        | _ -> text "You may only use scenarios on 'Included' sources."
-                                    | _ -> empty
-                            ]
+                            | WoodRing -> 
+                                scenarioView<Scenarios.WoodRingScenario> 
+                                    Scenarios.WoodRingScenario.Title 
+                                    Scenarios.WoodRingScenario.Description
+                                    "Add a tree ring timeline"
+                                    "Add a new timeline and associated site to the currently selected source (in the extract tab). All information is required. After creating, go back to the 'extract' tab and mark sections as complete as normal."
+                                    empty model dispatch
+                            | PalaeoCore -> 
+                                scenarioView<Scenarios.PalaeoCoreScenario>
+                                    Scenarios.PalaeoCoreScenario.Title 
+                                    Scenarios.PalaeoCoreScenario.Description
+                                    "Add a sediment or peat core record to this source"
+                                    "Use this scenario to add a sediment or peat core at a particular location, assign its radiocarbon dates and their depths, and quickly enter many morphotypes (biotic proxies). NOTE: Assumes a continuous, irregular sequence; for varves or hiatuses, use the 'extract' tab."
+                                    (div [] [
+                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm(Scenarios.palaeoCustomKey,None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm(Scenarios.palaeoCustomKey,None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ]
+                                    ])
+                                    model dispatch
                         | Page.Population -> concat [
                                 h2 [] [ text "Population" ]
                                 p [] [ text "List existing population nodes and create new ones." ]
@@ -1303,6 +1489,56 @@ module App =
                                                                 h4 [] [ text ((timelineAtom |> fst |> snd).DisplayName())]
                                                                 hr []
                                                                 timelineAtomDetailsView timelineAtom g
+                                                                cond (source.AddBioticHyperedgeBatch |> Map.tryFind (timelineAtom |> fst |> fst)) <| function
+                                                                | Some batch -> div [ _class "card border-info mb-4 mt-4"] [
+                                                                    div [ _class "card-header text-dark bg-info" ] [ text "You are using batch mode" ]
+                                                                    div [ _class "card-body" ] [
+                                                                        // Add 'auto-fill' boxes for batch mode
+                                                                        p [] [ text "In 'batch mode', you can more quickly add many microfossil proxy records at the same time (e.g. pollen, plant macrofossils, diatoms). Use the autofill boxes below to apply a common inference method and outcome measure across multiple biotic proxies." ]
+                                                                        div [ _class "row" ] [
+                                                                            div [ _class "col-md-3" ] [
+                                                                                label [ _class "form-label" ] [ text "Microfossil group" ]
+                                                                                select [ _class "form-select form-select-sm"; bind.change.string (batch.Group.ToString()) (fun s -> SetBatchModeAutofill((timelineAtom |> fst |> fst), asMicrofossilGroup s,batch.InferenceMethod,batch.Outcome,batch.UsePlaceholderTaxon, batch.UsePlaceholderInfer) |> dispatch) ] [
+                                                                                    option [ attr.value Population.BioticProxies.MicrofossilGroup.Pollen ] [ text "Pollen" ]
+                                                                                    option [ attr.value Population.BioticProxies.MicrofossilGroup.PlantMacrofossil ] [ text "Plant Macrofossil" ]
+                                                                                    option [ attr.value Population.BioticProxies.MicrofossilGroup.Diatom ] [ text "Diatom" ]
+                                                                                    option [ attr.value Population.BioticProxies.MicrofossilGroup.Ostracod ] [ text "Ostracod" ]
+                                                                                ]
+                                                                            ]
+                                                                            div [ _class "col-md-3" ] [
+                                                                                cond batch.UsePlaceholderInfer <| function
+                                                                                | false -> concat [
+                                                                                    label [ _class "form-label" ] [ text "Inference method (autofill)" ]
+                                                                                    select [ _class "form-select form-select-sm"; bind.change.string (if batch.InferenceMethod.IsSome then batch.InferenceMethod.Value.AsString else "") (fun s -> SetBatchModeAutofill((timelineAtom |> fst |> fst), batch.Group,Graph.stringToKey s |> Some,batch.Outcome,batch.UsePlaceholderTaxon, batch.UsePlaceholderInfer) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ]]
+                                                                                | true -> empty
+                                                                            ]
+                                                                            div [ _class "col-md-2" ] [
+                                                                                label [ _class "form-label" ] [ text "Outcome (autofill)" ]
+                                                                                select [ _class "form-select form-select-sm"; bind.change.string (if batch.Outcome.IsSome then batch.Outcome.Value.AsString else "") (fun s -> SetBatchModeAutofill((timelineAtom |> fst |> fst), batch.Group,batch.InferenceMethod,Graph.stringToKey s |> Some,batch.UsePlaceholderTaxon, batch.UsePlaceholderInfer) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ]
+                                                                            ]
+                                                                            div [ _class "col-md-2" ] [
+                                                                                div [ _class "form-check" ] [
+                                                                                    input [ _class "form-check-input"; attr.``type`` "checkbox"; bind.``checked`` batch.UsePlaceholderInfer (fun c -> SetBatchModeAutofill((timelineAtom |> fst |> fst), batch.Group,batch.InferenceMethod,batch.Outcome,batch.UsePlaceholderTaxon,c) |> dispatch) ]
+                                                                                    label [ _class "form-check-label" ] [ text "Use placeholder for inference" ]
+                                                                                ]
+                                                                                small [ attr.``class`` "form-text" ] [ text "Uses 'unknown' to fill at a later date." ]
+                                                                            ]
+                                                                            div [ _class "col-md-2" ] [
+                                                                                div [ _class "form-check" ] [
+                                                                                    input [ _class "form-check-input"; attr.``type`` "checkbox"; bind.``checked`` batch.UsePlaceholderTaxon (fun c -> SetBatchModeAutofill((timelineAtom |> fst |> fst), batch.Group,batch.InferenceMethod,batch.Outcome,c,batch.UsePlaceholderInfer) |> dispatch) ]
+                                                                                    label [ _class "form-check-label" ] [ text "Use placeholder for taxon?" ]
+                                                                                ]
+                                                                                small [ attr.``class`` "form-text" ] [ text "Uses 'unknown' to fill at a later date" ]
+                                                                            ]
+                                                                        ]
+                                                                    ]
+                                                                    div [ _class "card-footer" ] [
+                                                                        cond (batch.LinkedTaxa.Count > 0 && batch.UnlinkedTaxa.Count = 0) <| function
+                                                                        | true -> button [ _class "btn btn btn-primary"; on.click (fun _ -> ValidateOrConfirmBatch (timelineAtom |> fst |> fst) |> dispatch) ] [ text "Confirm (add) batch" ]
+                                                                        | false -> button [ _class "btn btn-primary"; on.click (fun _ -> ValidateOrConfirmBatch (timelineAtom |> fst |> fst) |> dispatch) ] [ text "Validate batch" ]
+                                                                        button [ _class "btn btn-outline-secondary"; on.click (fun _ -> UseBatchModeForProxiedTaxon ((timelineAtom |> fst |> fst),false) |> dispatch) ] [ text "Switch back to 'single add' mode" ]
+                                                                    ]]
+                                                                | None -> button [ _class "btn btn-outline-secondary mt-2 mb-2"; on.click (fun _ -> UseBatchModeForProxiedTaxon ((timelineAtom |> fst |> fst),true) |> dispatch) ] [ text "Switch to 'batch add' mode" ]
                                                                 div [] [
                                                                     table [ _class "table" ] [
                                                                         thead [] [
@@ -1316,32 +1552,82 @@ module App =
                                                                         ]
                                                                         tbody [] [
                                                                             // Add a new proxied taxon and outcome measure.
-                                                                            tr [] [        
-                                                                                cond (source.AddBioticHyperedge |> Map.tryFind (timelineAtom |> fst |> fst)) <| function
-                                                                                | Some (proxy,infer,taxon,outcome) -> concat [
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string (if proxy.IsSome then proxy.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),infer,taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string (if infer.IsSome then infer.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,Some (Graph.stringToKey s),taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                                    td [] [ 
-                                                                                        cond taxon <| function
-                                                                                        | Some t -> 
-                                                                                            concat [
-                                                                                                forEach t <| fun t -> div [ _class "form-floating" ] [
-                                                                                                    select [ _class "form-select"; bind.change.string (t.AsString) (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (taxon.Value |> List.map(fun f -> if f = t then Graph.stringToKey s else f)),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
-                                                                                                    label [ attr.style "pointer-events: auto !important;"; on.click (fun _ -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (taxon.Value |> List.except [t]),outcome) |> dispatch)] [ text "Remove" ] ]
-                                                                                                select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (Graph.stringToKey s :: taxon.Value),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
-                                                                                            ]
-                                                                                        | None -> select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some ([Graph.stringToKey s]),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                            cond (source.AddBioticHyperedgeBatch |> Map.tryFind (timelineAtom |> fst |> fst)) <| function
+                                                                            | None ->
+                                                                                tr [] [        
+                                                                                    cond (source.AddBioticHyperedge |> Map.tryFind (timelineAtom |> fst |> fst)) <| function
+                                                                                    | Some (proxy,infer,taxon,outcome) -> concat [
+                                                                                        td [] [ select [ _class "form-select"; bind.change.string (if proxy.IsSome then proxy.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),infer,taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                                                        td [] [ select [ _class "form-select"; bind.change.string (if infer.IsSome then infer.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,Some (Graph.stringToKey s),taxon,outcome) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                                                        td [] [ 
+                                                                                            cond taxon <| function
+                                                                                            | Some t -> 
+                                                                                                concat [
+                                                                                                    forEach t <| fun t -> div [ _class "form-floating" ] [
+                                                                                                        select [ _class "form-select"; bind.change.string (t.AsString) (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (taxon.Value |> List.map(fun f -> if f = t then Graph.stringToKey s else f)),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                                                        label [ attr.style "pointer-events: auto !important;"; on.click (fun _ -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (taxon.Value |> List.except [t]),outcome) |> dispatch)] [ text "Remove" ] ]
+                                                                                                    select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some (Graph.stringToKey s :: taxon.Value),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                                                ]
+                                                                                            | None -> select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,Some ([Graph.stringToKey s]),outcome) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                                        ]
+                                                                                        td [] [ select [ _class "form-select"; bind.change.string (if outcome.IsSome then outcome.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,taxon,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
+                                                                                    | None -> concat [
+                                                                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),None,None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,Some ([Graph.stringToKey s]),None) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
+                                                                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
+                                                                                    td [] [
+                                                                                        button [ _class "btn btn-primary"; on.click (fun _ -> SubmitProxiedTaxon (timelineAtom |> fst |> fst) |> dispatch) ] [ text "Save" ]
                                                                                     ]
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string (if outcome.IsSome then outcome.Value.AsString else "") (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),proxy,infer,taxon,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
-                                                                                | None -> concat [
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),Some (Graph.stringToKey s),None,None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,Some ([Graph.stringToKey s]),None) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ] ]
-                                                                                    td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm((timelineAtom |> fst |> fst),None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ] ]
-                                                                                td [] [
-                                                                                    button [ _class "btn btn-primary"; on.click (fun _ -> SubmitProxiedTaxon (timelineAtom |> fst |> fst) |> dispatch) ] [ text "Save" ]
                                                                                 ]
+                                                                            | Some batch -> concat [
+                                                                                // In batch mode, show each verified taxon as a normal entry field set (so it can be changed further)
+                                                                                forEach batch.LinkedTaxa <| fun proxiedTaxonEdge -> tr [] [
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string (proxiedTaxonEdge.Value |> fun (a,_,_,_) -> a.AsString) (fun s -> (proxiedTaxonEdge.Value |> fun (m,i,t,o) -> ChangeBatchVerifiedTaxon((timelineAtom |> fst |> fst),proxiedTaxonEdge.Key,(Graph.stringToKey s,i,t,o))) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.BioticProxyNode> model.Graph ] ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string (proxiedTaxonEdge.Value |> fun (_,i,_,_) -> i.AsString) (fun s -> (proxiedTaxonEdge.Value |> fun (m,i,t,o) -> ChangeBatchVerifiedTaxon((timelineAtom |> fst |> fst),proxiedTaxonEdge.Key,(m,Graph.stringToKey s,t,o))) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
+                                                                                    td [] [ 
+                                                                                        forEach (proxiedTaxonEdge.Value |> fun(_,_,t,_) -> t) <| fun taxon ->
+                                                                                            div [ _class "form-floating" ] [
+                                                                                                select [ _class "form-select"; bind.change.string (taxon.AsString) (fun s -> (proxiedTaxonEdge.Value |> fun (m,i,t,o) -> ChangeBatchVerifiedTaxon((timelineAtom |> fst |> fst),proxiedTaxonEdge.Key,(m,i,(t |> List.map(fun f -> if f = taxon then Graph.stringToKey s else f)),o))) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                                                label [ attr.style "pointer-events: auto !important;"; on.click (fun s -> (proxiedTaxonEdge.Value |> fun (m,i,t,o) -> ChangeBatchVerifiedTaxon((timelineAtom |> fst |> fst),proxiedTaxonEdge.Key,(m,i,(t |> List.except [taxon]),o))) |> dispatch) ] [ text "Remove" ]
+                                                                                            ]
+                                                                                        select [ _class "form-select"; bind.change.string "" (fun s -> (proxiedTaxonEdge.Value |> fun (m,i,t,o) -> ChangeBatchVerifiedTaxon((timelineAtom |> fst |> fst),proxiedTaxonEdge.Key,(m,i,Graph.stringToKey s :: t,o))) |> dispatch) ] [ ViewGen.optionGen<Population.Taxonomy.TaxonNode> model.Graph ]
+                                                                                        ]
+                                                                                    td [] [ select [ _class "form-select"; bind.change.string (proxiedTaxonEdge.Value |> fun (_,_,_,o) -> o.AsString) (fun s -> (proxiedTaxonEdge.Value |> fun (m,i,t,o) -> ChangeBatchVerifiedTaxon((timelineAtom |> fst |> fst),proxiedTaxonEdge.Key,(m,i,t,Graph.stringToKey s))) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ]
+                                                                                    td [] [ button [ _class "btn btn-outline-secondary"; on.click(fun _ -> RemoveBatchVerifiedTaxon(timelineAtom |> fst |> fst, proxiedTaxonEdge.Key) |> dispatch) ] [ text "Remove" ]]
+                                                                                ]
+                                                                                cond (batch.InferenceMethod.IsSome && batch.Outcome.IsSome) <| function
+                                                                                | true ->
+                                                                                    cond (Storage.atomFriendlyNameByKey batch.InferenceMethod.Value g) <| function
+                                                                                    | Some inference ->
+                                                                                        cond (Storage.atomFriendlyNameByKey batch.Outcome.Value g) <| function
+                                                                                        | Some outcome -> concat [
+                                                                                            // Display unverified batch entries
+                                                                                            forEach batch.UnlinkedTaxa <| fun unlinkedT -> tr [] [
+                                                                                                td [] [ input [ _class "form-control form-control-sm"; bind.input.string (fst unlinkedT.Value) (fun s -> ((timelineAtom |> fst |> fst),unlinkedT.Key, s, (snd unlinkedT.Value)) |> ChangeBatchUnverifiedProxiedTaxon |> dispatch) ] ]
+                                                                                                td [] [ text inference ]
+                                                                                                td [] [
+                                                                                                    cond batch.UsePlaceholderTaxon <| function
+                                                                                                    | false -> concat [
+                                                                                                        input [ _class "form-control form-control-sm"; bind.input.string (snd unlinkedT.Value) (fun s -> ((timelineAtom |> fst |> fst),unlinkedT.Key, (fst unlinkedT.Value), s) |> ChangeBatchUnverifiedProxiedTaxon |> dispatch) ]
+                                                                                                        small [ _class "form-text" ] [ text "for multiple, use ; seperator" ] ]
+                                                                                                    | true -> text "Unknown (to be coded later)"
+                                                                                                ]
+                                                                                                td [] [ text outcome ]
+                                                                                                td [] [ button [ _class "btn btn-outline-secondary"; on.click(fun _ -> RemoveBatchUnverifiedTaxon(timelineAtom |> fst |> fst, unlinkedT.Key) |> dispatch) ] [ text "Remove" ]]
+                                                                                            ]
+                                                                                            tr [] [
+                                                                                                td [] []
+                                                                                                td [] []
+                                                                                                td [] []
+                                                                                                td [] []
+                                                                                                td [] [ button [ _class "btn btn-outline-secondary"; on.click (fun _ -> ((timelineAtom |> fst |> fst),999, "", "") |> ChangeBatchUnverifiedProxiedTaxon |> dispatch) ] [ text "Add another row" ]]
+                                                                                            ]]
+                                                                                        | None -> empty
+                                                                                    | None -> empty
+                                                                                | false -> tr [] [ td [] [ text "For batch entry, please fill in the inference method and outcome above." ] ]
                                                                             ]
+
                                                                             forEach (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.HasProxyInfo |> Storage.atomsByKey g ) <| fun proxiedTaxonEdge -> concat [
                                                                                 cond (proxiedTaxonEdge |> GraphStructure.Relations.nodeIdsByRelation<Population.PopulationRelation> Population.PopulationRelation.InferredFrom |> Seq.head |> (fun k -> Storage.atomFriendlyNameByKey k g)) <| function
                                                                                 | Some proxyName ->
