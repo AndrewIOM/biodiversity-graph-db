@@ -53,7 +53,6 @@ module App =
 
     and ScenarioPage =
         | WoodRing
-        | PalaeoCore
 
     type Model =
         {
@@ -343,36 +342,6 @@ module App =
                                 |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
                                 |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
                             | None -> { model with Error = Some "TODO" }, Cmd.none
-                        | None -> { model with Error = Some "TODO" }, Cmd.none
-                    | None -> { model with Error = Some "TODO" }, Cmd.none
-                else if typeof<Scenarios.PalaeoCoreScenario> = nodeType 
-                then 
-                    match model.Graph with
-                    | Some g ->
-                        match model.SelectedSource with
-                        | Some source ->
-                            let keys =
-                                source.AddBioticHyperedge
-                                |> Map.tryFind Scenarios.palaeoCustomKey
-                                |> Option.bind(fun (_,i,_,m) ->
-                                    if i.IsNone || m.IsNone then None
-                                    else Some (Storage.atomByKey i.Value g, Storage.atomByKey m.Value g)
-                                )
-                            match keys with
-                            | None -> { model with Error = Some "Enter an inference method and outcome first" }, Cmd.none
-                            | Some (infer,outcome) ->
-                                if infer.IsNone || outcome.IsNone
-                                then  { model with Error = Some "Enter an inference method and outcome first" }, Cmd.none
-                                else
-                                    match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
-                                    | Some (formData: NodeViewModel) -> 
-                                        Create.createFromViewModel nodeType formData
-                                        |> Result.lift (fun n -> n :?> Scenarios.PalaeoCoreScenario)
-                                        |> Result.bind(fun vm -> 
-                                            Scenarios.Automators.automatePalaeoCore vm source.SelectedSource infer.Value outcome.Value g)
-                                        |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
-                                        |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
-                                    | None -> { model with Error = Some "TODO" }, Cmd.none
                         | None -> { model with Error = Some "TODO" }, Cmd.none
                     | None -> { model with Error = Some "TODO" }, Cmd.none
                 else
@@ -918,7 +887,7 @@ module App =
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario PalaeoCore ] dispatch
+                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
@@ -932,17 +901,6 @@ module App =
                                     "Add a tree ring timeline"
                                     "Add a new timeline and associated site to the currently selected source (in the extract tab). All information is required. After creating, go back to the 'extract' tab and mark sections as complete as normal."
                                     empty model dispatch
-                            | PalaeoCore -> 
-                                scenarioView<Scenarios.PalaeoCoreScenario>
-                                    Scenarios.PalaeoCoreScenario.Title 
-                                    Scenarios.PalaeoCoreScenario.Description
-                                    "Add a sediment or peat core record to this source"
-                                    "Use this scenario to add a sediment or peat core at a particular location, assign its radiocarbon dates and their depths, and quickly enter many morphotypes (biotic proxies). NOTE: Assumes a continuous, irregular sequence; for varves or hiatuses, use the 'extract' tab."
-                                    (div [] [
-                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm(Scenarios.palaeoCustomKey,None,Some (Graph.stringToKey s),None,None) |> dispatch) ] [ ViewGen.optionGen<Population.BioticProxies.InferenceMethodNode> model.Graph ] ]
-                                        td [] [ select [ _class "form-select"; bind.change.string "" (fun s -> ChangeProxiedTaxonVm(Scenarios.palaeoCustomKey,None,None,None,Some (Graph.stringToKey s)) |> dispatch) ] [ ViewGen.optionGen<Outcomes.Biodiversity.BiodiversityDimensionNode> model.Graph ] ]
-                                    ])
-                                    model dispatch
                         | Page.Population -> concat [
                                 h2 [] [ text "Population" ]
                                 p [] [ text "List existing population nodes and create new ones." ]
