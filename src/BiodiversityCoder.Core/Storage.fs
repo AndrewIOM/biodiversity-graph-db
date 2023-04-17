@@ -293,6 +293,25 @@ module Storage =
                 ) (Ok fileGraph) groupedByType
         }
 
+    let tryFindTaxonByName taxon graph =
+        let latinName = function
+            | Population.Taxonomy.Life -> "Life" |> FieldDataTypes.Text.createShort
+            | Population.Taxonomy.Kingdom l -> Ok l
+            | Population.Taxonomy.Phylum l -> Ok l
+            | Population.Taxonomy.Class l -> Ok l
+            | Population.Taxonomy.Order l -> Ok l
+            | Population.Taxonomy.Family l -> Ok l
+            | Population.Taxonomy.Genus l -> Ok l
+            | Population.Taxonomy.Species (g,s,a) -> sprintf "%s %s" g.Value s.Value |> FieldDataTypes.Text.createShort
+            | Population.Taxonomy.Subspecies (g,s,ssp,a) -> sprintf "%s %s ssp. %s" g.Value s.Value ssp.Value |> FieldDataTypes.Text.createShort
+        (unwrap graph).Graph |> GraphStructure.Nodes.tryFindTaxon(fun t ->
+            match latinName t with
+            | Ok t -> t = taxon
+            | Error _ -> false )
+
+    let tryFindProxy proxy graph =
+        (unwrap graph).Graph |> GraphStructure.Nodes.tryFindProxy (fun t -> t = proxy)
+
     /// Adds a 'proxied taxon' intermediary node to the graph. This node represents
     /// an 'occurrence' of a combination of inference method, biotic proxy, and taxon
     /// that are only valid for one time and study.
