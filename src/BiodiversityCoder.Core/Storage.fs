@@ -301,9 +301,14 @@ module Storage =
             | Population.Taxonomy.Class l -> Ok l
             | Population.Taxonomy.Order l -> Ok l
             | Population.Taxonomy.Family l -> Ok l
+            | Population.Taxonomy.Subfamily l -> Ok l
+            | Population.Taxonomy.Tribe l -> Ok l
+            | Population.Taxonomy.Subtribe l -> Ok l
             | Population.Taxonomy.Genus l -> Ok l
+            | Population.Taxonomy.Subgenus l -> Ok l
             | Population.Taxonomy.Species (g,s,a) -> sprintf "%s %s" g.Value s.Value |> FieldDataTypes.Text.createShort
             | Population.Taxonomy.Subspecies (g,s,ssp,a) -> sprintf "%s %s ssp. %s" g.Value s.Value ssp.Value |> FieldDataTypes.Text.createShort
+            | Population.Taxonomy.Variety (g,s,ssp,a) -> sprintf "%s %s var. %s" g.Value s.Value ssp.Value |> FieldDataTypes.Text.createShort
         (unwrap graph).Graph |> GraphStructure.Nodes.tryFindTaxon(fun t ->
             match latinName t with
             | Ok t -> t = taxon

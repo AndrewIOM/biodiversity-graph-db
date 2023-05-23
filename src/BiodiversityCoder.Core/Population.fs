@@ -26,9 +26,14 @@ module Population =
             | Class of name:Text.ShortText
             | Order of name:Text.ShortText
             | Family of name:Text.ShortText
+            | Subfamily of name:Text.ShortText
+            | Tribe of name:Text.ShortText
+            | Subtribe of name:Text.ShortText
             | Genus of name:Text.ShortText
+            | Subgenus of name:Text.ShortText
             | Species of generic:Text.ShortText * specific:Text.ShortText * authorship:Text.ShortText
             | Subspecies of generic:Text.ShortText * specific:Text.ShortText * subspecific:Text.ShortText * authorship:Text.ShortText
+            | Variety of generic:Text.ShortText * specific:Text.ShortText * subspecific:Text.ShortText * authorship:Text.ShortText
 
         /// A common name given to a taxon, for example 'plants' for Plantae, or
         /// 'Manx Shearwater' for Puffinus puffinus.

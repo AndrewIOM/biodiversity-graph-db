@@ -265,9 +265,14 @@ module GraphStructure =
                     | Taxonomy.TaxonNode.Class l -> sprintf "%s [Class]" l.Value
                     | Taxonomy.TaxonNode.Order l -> sprintf "%s [Order]" l.Value
                     | Taxonomy.TaxonNode.Family l -> sprintf "%s [Family]" l.Value
+                    | Taxonomy.TaxonNode.Subfamily l -> sprintf "%s [Sub-Family]" l.Value
+                    | Taxonomy.TaxonNode.Tribe l -> sprintf "%s [Tribe]" l.Value
+                    | Taxonomy.TaxonNode.Subtribe l -> sprintf "%s [Sub-Tribe]" l.Value
                     | Taxonomy.TaxonNode.Genus l -> sprintf "%s [Genus]" l.Value
+                    | Taxonomy.TaxonNode.Subgenus l -> sprintf "%s [Sub-Genus]" l.Value
                     | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "%s %s %s [Species]" l.Value l2.Value l3.Value
                     | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "%s %s subsp. %s %s [Subspecies]" l.Value l2.Value l3.Value l4.Value
+                    | Taxonomy.TaxonNode.Variety (l,l2,l3, l4) -> sprintf "%s %s var. %s %s [Variety]" l.Value l2.Value l3.Value l4.Value
                 | InferenceMethodNode n ->
                     match n with
                     | BioticProxies.InferenceMethodNode.Implicit -> "Implicit"
@@ -336,9 +341,14 @@ module GraphStructure =
                 | Taxonomy.TaxonNode.Class l -> sprintf "class_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Order l -> sprintf "order_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Family l -> sprintf "family_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Subfamily l -> sprintf "subfamily_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Tribe l -> sprintf "tribe_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Subtribe l -> sprintf "subtribe_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Genus l -> sprintf "genus_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Subgenus l -> sprintf "subgenus_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "species_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString(l3.Value)) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "subspecies_%s_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString l3.Value) (System.Net.WebUtility.HtmlEncode(l4.Value)) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Variety (l,l2,l3, l4) -> sprintf "variety_%s_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString l3.Value) (System.Net.WebUtility.HtmlEncode(l4.Value)) |> toLower |> friendlyKey
             | InferenceMethodNode n ->
                 match n with
                 | BioticProxies.InferenceMethodNode.Implicit -> "Implicit" |> toLower |> friendlyKey
