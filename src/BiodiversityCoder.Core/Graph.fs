@@ -320,7 +320,7 @@ module GraphStructure =
                 | Population.BioticProxies.BioticProxyNode.Morphotype m -> 
                     match m with
                     | Population.BioticProxies.Megafossil (part,f) -> sprintf "morphotype_megafossil_%s_%s" (safeString f.Value) (safeString part.Value) |> toLower |> friendlyKey
-                    | Population.BioticProxies.Macrofossil (part,f) -> sprintf "morphotype_megafossil_%s_%s" (safeString f.Value) (safeString part.Value) |> toLower |> friendlyKey
+                    | Population.BioticProxies.Macrofossil (part,f) -> sprintf "morphotype_macrofossil_%s_%s" (safeString f.Value) (safeString part.Value) |> toLower |> friendlyKey
                     | Population.BioticProxies.Microfossil (group, name) ->
                         match group with
                         | Population.BioticProxies.MicrofossilGroup.Diatom -> sprintf "morphotype_diatom_%s" (safeString name.Value) |> toLower |> friendlyKey
@@ -342,7 +342,7 @@ module GraphStructure =
             | InferenceMethodNode n ->
                 match n with
                 | BioticProxies.InferenceMethodNode.Implicit -> "Implicit" |> toLower |> friendlyKey
-                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" (safeString r.Value) |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" ((r.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString) |> toLower |> friendlyKey
                 | BioticProxies.InferenceMethodNode.ImplicitByExpert (l,i) -> sprintf "expert_%s_%s" (safeString l.Value) (safeString i.Value) |> toLower |> friendlyKey
             | ProxiedTaxonNode -> guidKey (System.Guid.NewGuid())
             | ContextNode _ -> guidKey (System.Guid.NewGuid())
@@ -366,7 +366,7 @@ module GraphStructure =
                         n.Contact.LastName.Value
                         (n.Contact.FirstName.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
                         (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "") |> toLower |> friendlyKey
-                | DarkData n -> sprintf "darkdata_%s" (safeString n.Contact.LastName.Value) |> toLower |> friendlyKey
+                | DarkData n -> sprintf "darkdata_%s_%s_%s" (safeString n.Contact.LastName.Value) (safeString n.Contact.FirstName.Value) ((n.Details.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> Seq.truncate 40 |> String.concat "")) |> toLower |> friendlyKey
                 | Database n -> sprintf "database_%s" (safeString n.Abbreviation.Value) |> toLower |> friendlyKey
                 | DatabaseEntry n -> sprintf "database_%s_entry_%s" (safeString n.DatabaseAbbreviation.Value) (safeString n.UniqueIdentifierInDatabase.Value) |> toLower |> friendlyKey
         | ExposureNode e ->
