@@ -265,9 +265,14 @@ module GraphStructure =
                     | Taxonomy.TaxonNode.Class l -> sprintf "%s [Class]" l.Value
                     | Taxonomy.TaxonNode.Order l -> sprintf "%s [Order]" l.Value
                     | Taxonomy.TaxonNode.Family l -> sprintf "%s [Family]" l.Value
+                    | Taxonomy.TaxonNode.Subfamily l -> sprintf "%s [Sub-Family]" l.Value
+                    | Taxonomy.TaxonNode.Tribe l -> sprintf "%s [Tribe]" l.Value
+                    | Taxonomy.TaxonNode.Subtribe l -> sprintf "%s [Sub-Tribe]" l.Value
                     | Taxonomy.TaxonNode.Genus l -> sprintf "%s [Genus]" l.Value
+                    | Taxonomy.TaxonNode.Subgenus l -> sprintf "%s [Sub-Genus]" l.Value
                     | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "%s %s %s [Species]" l.Value l2.Value l3.Value
                     | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "%s %s subsp. %s %s [Subspecies]" l.Value l2.Value l3.Value l4.Value
+                    | Taxonomy.TaxonNode.Variety (l,l2,l3, l4) -> sprintf "%s %s var. %s %s [Variety]" l.Value l2.Value l3.Value l4.Value
                 | InferenceMethodNode n ->
                     match n with
                     | BioticProxies.InferenceMethodNode.Implicit -> "Implicit"
@@ -320,7 +325,7 @@ module GraphStructure =
                 | Population.BioticProxies.BioticProxyNode.Morphotype m -> 
                     match m with
                     | Population.BioticProxies.Megafossil (part,f) -> sprintf "morphotype_megafossil_%s_%s" (safeString f.Value) (safeString part.Value) |> toLower |> friendlyKey
-                    | Population.BioticProxies.Macrofossil (part,f) -> sprintf "morphotype_megafossil_%s_%s" (safeString f.Value) (safeString part.Value) |> toLower |> friendlyKey
+                    | Population.BioticProxies.Macrofossil (part,f) -> sprintf "morphotype_macrofossil_%s_%s" (safeString f.Value) (safeString part.Value) |> toLower |> friendlyKey
                     | Population.BioticProxies.Microfossil (group, name) ->
                         match group with
                         | Population.BioticProxies.MicrofossilGroup.Diatom -> sprintf "morphotype_diatom_%s" (safeString name.Value) |> toLower |> friendlyKey
@@ -336,13 +341,18 @@ module GraphStructure =
                 | Taxonomy.TaxonNode.Class l -> sprintf "class_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Order l -> sprintf "order_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Family l -> sprintf "family_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Subfamily l -> sprintf "subfamily_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Tribe l -> sprintf "tribe_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Subtribe l -> sprintf "subtribe_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Genus l -> sprintf "genus_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Subgenus l -> sprintf "subgenus_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "species_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString(l3.Value)) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "subspecies_%s_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString l3.Value) (System.Net.WebUtility.HtmlEncode(l4.Value)) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Variety (l,l2,l3, l4) -> sprintf "variety_%s_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString l3.Value) (System.Net.WebUtility.HtmlEncode(l4.Value)) |> toLower |> friendlyKey
             | InferenceMethodNode n ->
                 match n with
                 | BioticProxies.InferenceMethodNode.Implicit -> "Implicit" |> toLower |> friendlyKey
-                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" (safeString r.Value) |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" ((r.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString) |> toLower |> friendlyKey
                 | BioticProxies.InferenceMethodNode.ImplicitByExpert (l,i) -> sprintf "expert_%s_%s" (safeString l.Value) (safeString i.Value) |> toLower |> friendlyKey
             | ProxiedTaxonNode -> guidKey (System.Guid.NewGuid())
             | ContextNode _ -> guidKey (System.Guid.NewGuid())
@@ -366,7 +376,7 @@ module GraphStructure =
                         n.Contact.LastName.Value
                         (n.Contact.FirstName.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "")
                         (n.Title.Value.Split(" ") |> Seq.map (Seq.head >> string) |> String.concat "") |> toLower |> friendlyKey
-                | DarkData n -> sprintf "darkdata_%s" (safeString n.Contact.LastName.Value) |> toLower |> friendlyKey
+                | DarkData n -> sprintf "darkdata_%s_%s_%s" (safeString n.Contact.LastName.Value) (safeString n.Contact.FirstName.Value) ((n.Details.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> Seq.truncate 40 |> String.concat "")) |> toLower |> friendlyKey
                 | Database n -> sprintf "database_%s" (safeString n.Abbreviation.Value) |> toLower |> friendlyKey
                 | DatabaseEntry n -> sprintf "database_%s_entry_%s" (safeString n.DatabaseAbbreviation.Value) (safeString n.UniqueIdentifierInDatabase.Value) |> toLower |> friendlyKey
         | ExposureNode e ->
