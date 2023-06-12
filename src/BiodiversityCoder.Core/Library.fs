@@ -339,7 +339,7 @@ module App =
                                 |> Result.lift (fun n -> n :?> Scenarios.WoodRingScenario)
                                 |> Result.bind(fun vm -> 
                                     Scenarios.Automators.automateTreeRing vm source.SelectedSource g)
-                                |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                |> Result.lift (fun g -> { model with Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
                                 |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
                             | None -> { model with Error = Some "TODO" }, Cmd.none
                         | None -> { model with Error = Some "TODO" }, Cmd.none
@@ -347,7 +347,9 @@ module App =
                 else
                     match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
                     | Some (formData: NodeViewModel) -> 
-                        let node = Create.createFromViewModel nodeType formData
+                        let node = 
+                            try Create.createFromViewModel nodeType formData with
+                            | exn -> Error <| sprintf "Internal error when making a node: %s %s" exn.Message exn.StackTrace
                         match node with
                         | Error e -> { model with Error = Some e }, Cmd.none
                         | Ok n -> 
@@ -1021,6 +1023,7 @@ module App =
                                 h2 [] [ text "Sources Manager" ]
                                 hr []
                                 p [] [ text "Sources may be imported in bulk from Colandr screening, or added individually." ]
+                                errorAlert model dispatch
 
                                 h3 [] [ text "Add an individual source - manually" ]
                                 hr []

@@ -144,7 +144,9 @@ module Create =
             | _ ->
                 printfn "Could not find create method for type %s" objType.Name
                 match v with
-                | Number n -> n :> obj |> Ok
+                | Number n -> 
+                    if objType = typeof<int> then int n :> obj |> Ok
+                    else n :> obj |> Ok
                 | Text t -> t :> obj |> Ok
                 | Date t -> t :> obj |> Ok
                 | Time t -> t :> obj |> Ok
