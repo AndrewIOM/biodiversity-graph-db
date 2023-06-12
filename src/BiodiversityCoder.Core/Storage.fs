@@ -123,6 +123,7 @@ module Storage =
             [ r; nodes ] 
             |> Seq.concat
             |> Seq.sortBy(fun n -> n.NodeTypeName, n.NodeId)
+            |> Seq.distinct
             |> makeCacheFile directory indexFile
             |> Result.lift(fun _ -> [r; nodes] |> List.concat ))
 
