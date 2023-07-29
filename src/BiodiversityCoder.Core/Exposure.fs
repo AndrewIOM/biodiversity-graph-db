@@ -110,6 +110,7 @@ module Exposure =
         | ConstructedWithDate       of IndividualTimelineNode * IndividualDateNode
         // from individual temporal extent:
         | HasProxyInfo              of IndividualTimelineNode * Population.ProxiedTaxon.ProxiedTaxonHyperEdge
+        | HasProxyCategory          of IndividualTimelineNode * Population.BioticProxies.BioticProxyCategoryNode
         | HasOrphanProxy            of IndividualTimelineNode * Population.BioticProxies.BioticProxyNode
         // from individual temporal extent:
         | IsLocatedAt               of IndividualTimelineNode * Population.Context.ContextNode
@@ -132,5 +133,6 @@ module Exposure =
         | IntersectsTime
         | ConstructedWithDate
         | HasProxyInfo
+        | HasProxyCategory
         | HasOrphanProxy
         | IsLocatedAt

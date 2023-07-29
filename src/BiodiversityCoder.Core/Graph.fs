@@ -167,6 +167,7 @@ module GraphStructure =
     type PopulationNode =
         | TaxonomyNode of Taxonomy.TaxonNode
         | BioticProxyNode of BioticProxies.BioticProxyNode
+        | BioticProxyCategoryNode of BioticProxies.BioticProxyCategoryNode
         | InferenceMethodNode of BioticProxies.InferenceMethodNode
         | ContextNode of Context.ContextNode
         | VernacularTaxonLabelNode of Taxonomy.VernacularTaxonLabelNode
@@ -215,6 +216,7 @@ module GraphStructure =
             | PopulationNode p ->
                 match p with
                 | BioticProxyNode n -> "BioticProxyNode"
+                | BioticProxyCategoryNode n -> "BioticProxyCategoryNode"
                 | TaxonomyNode n -> "TaxonNode"
                 | InferenceMethodNode n -> "InferenceMethodNode"
                 | ProxiedTaxonNode -> "ProxiedTaxonNode"
@@ -257,6 +259,7 @@ module GraphStructure =
                             | Population.BioticProxies.MicrofossilGroup.PlantMacrofossil -> sprintf "Morphotype: Plant Macrofossil - %s" name.Value
                             | Population.BioticProxies.MicrofossilGroup.Pollen -> sprintf "Morphotype: Pollen - %s" name.Value
                             | Population.BioticProxies.MicrofossilGroup.OtherMicrofossilGroup group -> sprintf "Morphotype: %s - %s" group.Value name.Value
+                | BioticProxyCategoryNode n -> n.ToString()
                 | TaxonomyNode n ->
                     match n with
                     | Taxonomy.TaxonNode.Life -> "Life"
@@ -333,6 +336,19 @@ module GraphStructure =
                         | Population.BioticProxies.MicrofossilGroup.PlantMacrofossil -> sprintf "morphotype_plantmacrofossil_%s" (safeString name.Value) |> toLower |> friendlyKey
                         | Population.BioticProxies.MicrofossilGroup.Pollen -> sprintf "morphotype_pollen_%s" (safeString name.Value) |> toLower |> friendlyKey
                         | Population.BioticProxies.MicrofossilGroup.OtherMicrofossilGroup group -> sprintf "morphotype_customgroup_%s_%s" (safeString group.Value) (safeString name.Value) |> toLower |> friendlyKey
+            | BioticProxyCategoryNode n ->
+                match n with
+                | BioticProxies.BioticProxyCategoryNode.AncientDNA g -> sprintf "aDNA_%s" (safeString <| g.ToString()) |> toLower |> friendlyKey
+                | BioticProxies.BioticProxyCategoryNode.Contemporary g -> sprintf "contemporary_%s" (safeString <| g.ToString()) |> toLower |> friendlyKey
+                | BioticProxies.BioticProxyCategoryNode.Fossil g -> sprintf "fossil_%s" (safeString <| g.ToString()) |> toLower |> friendlyKey
+                | BioticProxies.BioticProxyCategoryNode.OtherProxy p -> sprintf "fossil_%s" (safeString <| p.Value) |> toLower |> friendlyKey 
+                | BioticProxies.BioticProxyCategoryNode.Microfossil m ->
+                    match m with
+                    | BioticProxies.MicrofossilGroup.Diatom -> "fossilmicro_diatom" |> toLower |> friendlyKey
+                    | BioticProxies.MicrofossilGroup.Ostracod -> "fossilmicro_ostracod" |> toLower |> friendlyKey
+                    | BioticProxies.MicrofossilGroup.PlantMacrofossil -> "fossilmicro_plantmacrofossil" |> toLower |> friendlyKey
+                    | BioticProxies.MicrofossilGroup.Pollen -> "fossilmicro_pollen" |> toLower |> friendlyKey
+                    | BioticProxies.MicrofossilGroup.OtherMicrofossilGroup group -> sprintf "fossilmicro_other_%s" (safeString group.Value) |> toLower |> friendlyKey
             | TaxonomyNode n ->
                 match n with
                 | Taxonomy.TaxonNode.Life -> "life" |> toLower |> friendlyKey
@@ -449,6 +465,7 @@ module GraphStructure =
                 | (t: System.Type) when t = typeof<Sources.GreySourceNode> -> n :?> Sources.GreySourceNode |> GreyLiterature |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
                 // Population nodes:
                 | (t: System.Type) when t = typeof<BioticProxies.BioticProxyNode> -> n :?> BioticProxies.BioticProxyNode |> BioticProxyNode |> PopulationNode |> Ok
+                | (t: System.Type) when t = typeof<BioticProxies.BioticProxyCategoryNode> -> n :?> BioticProxies.BioticProxyCategoryNode |> BioticProxyCategoryNode |> PopulationNode |> Ok
                 | (t: System.Type) when t = typeof<Taxonomy.TaxonNode> -> n :?> Taxonomy.TaxonNode |> TaxonomyNode |> PopulationNode |> Ok
                 | (t: System.Type) when t = typeof<BioticProxies.InferenceMethodNode> -> n :?> BioticProxies.InferenceMethodNode |> InferenceMethodNode |> PopulationNode |> Ok
                 | (t: System.Type) when t = typeof<Population.Taxonomy.VernacularTaxonLabelNode> -> n :?> Population.Taxonomy.VernacularTaxonLabelNode |> VernacularTaxonLabelNode |> PopulationNode |> Ok
@@ -532,6 +549,7 @@ module GraphStructure =
                 | ExtentEarliestOutOfScope t -> compare source sink rel (Relation.Exposure <| ExtentEarliestOutOfScope t)
                 | IntersectsTime -> compare source sink rel (Relation.Exposure IntersectsTime)
                 | HasProxyInfo -> compare source sink rel (Relation.Exposure HasProxyInfo)
+                | HasProxyCategory -> compare source sink rel (Relation.Exposure HasProxyCategory)
                 | HasOrphanProxy -> compare source sink rel (Relation.Exposure HasOrphanProxy)
                 | IsLocatedAt -> compare source sink rel (Relation.Exposure IsLocatedAt)
                 | ConstructedWithDate -> compare source sink rel (Relation.Exposure ConstructedWithDate)

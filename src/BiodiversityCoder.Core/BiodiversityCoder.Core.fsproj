@@ -23,5 +23,6 @@
     <PackageReference Include="Cyjs.NET" Version="0.0.4" />
     <PackageReference Include="FSharp.Data" Version="5.0.2" />
     <PackageReference Include="Microsoft.FSharpLu.Json" Version="0.11.7" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 </Project>
