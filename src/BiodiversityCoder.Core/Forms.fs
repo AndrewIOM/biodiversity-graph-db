@@ -342,16 +342,16 @@ module ViewGen =
             | FieldList l ->
                 listGroup field [
                     forEach l <| fun k -> concat [
-                        renderPropertyInfo f (field.PropertyType.GetProperty("Head")) (fun vm -> nestedVm <| FieldList([fst k, vm])) dispatch makeField'
+                        makeField' (Some field) (snd k) (fun vm -> nestedVm <| FieldList([fst k, vm])) (field.PropertyType.GetProperty("Head").PropertyType) dispatch
                         small [ on.click(fun _ -> (nestedVm (FieldList [fst k, NotEnteredYet])) |> dispatch) ] [ text "Remove this one" ]
                     ]
-                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, NotEnteredYet] )) |> dispatch) ] [ text "Add another" ] ]
+                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, FieldValue(Number 1)] )) |> dispatch) ] [ text "Add another" ] ]
             | Fields _
             | NotEnteredYet ->
                 cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [ 
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)])) |> dispatch) ] [ text "Add another" ] ]
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, FieldValue(Number 1))])) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
                     // Field does not have an existing value. Render cleanly.
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
@@ -373,7 +373,7 @@ module ViewGen =
             cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)] )) |> dispatch) ] [ text "Add another" ] ]
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, FieldValue(Number 1))] )) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
                     | true -> 
@@ -399,18 +399,6 @@ module ViewGen =
             // Is a DU. Display a select box to select possible cases.
                 concat [
                     cond viewModel <| function
-                    | NotEnteredYet ->
-                        if Reflection.FSharpType.GetUnionCases(nestedType).Length <> 1 then
-                            // Nothing entered yet. Display an empty select box for the case.
-                            // A DU case is not yet selected. Don't display any fields.
-                            genSelect field nestedType "" (fun s -> (nestedVm(DU(s,NotEnteredYet))) |> dispatch)
-                        else 
-                            // There is only one DU case, so skip rendering the choice.
-                            cond (Reflection.FSharpType.GetUnionCases(nestedType) |> Seq.tryFind(fun c -> c.Name = (Reflection.FSharpType.GetUnionCases(nestedType).[0].Name))) <| function
-                            | Some s ->
-                                // None of the fields have any entered values yet. Render all of them cleanly.
-                                forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU((Reflection.FSharpType.GetUnionCases(nestedType).[0].Name), Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
-                            | None -> empty
                     | DU (selectedCase: string, vm) ->
                         // A DU case is selected. Display its fields for editing.
                         concat [
@@ -432,9 +420,20 @@ module ViewGen =
                                     // None of the fields have any entered values yet. Render all of them cleanly.
                                     forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
                             | None -> empty ]
-                    | _ -> 
-                        // Shouldn't be able to have a field when it is a DU.
-                        empty ]
+                    | NotEnteredYet
+                    | _ ->
+                        if Reflection.FSharpType.GetUnionCases(nestedType).Length <> 1 then
+                            // Nothing entered yet. Display an empty select box for the case.
+                            // A DU case is not yet selected. Don't display any fields.
+                            genSelect field nestedType "" (fun s -> (nestedVm(DU(s,NotEnteredYet))) |> dispatch)
+                        else 
+                            // There is only one DU case, so skip rendering the choice.
+                            cond (Reflection.FSharpType.GetUnionCases(nestedType) |> Seq.tryFind(fun c -> c.Name = (Reflection.FSharpType.GetUnionCases(nestedType).[0].Name))) <| function
+                            | Some s ->
+                                // None of the fields have any entered values yet. Render all of them cleanly.
+                                forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU((Reflection.FSharpType.GetUnionCases(nestedType).[0].Name), Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
+                            | None -> empty
+                        ]
         | false -> // Is not a DU.
             cond (Reflection.FSharpType.IsRecord(nestedType)) <| function
             | true -> // Is an F# record. Generate display for all fields.

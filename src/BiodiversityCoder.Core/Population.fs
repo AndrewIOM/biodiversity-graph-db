@@ -34,6 +34,7 @@ module Population =
             | Species of generic:Text.ShortText * specific:Text.ShortText * authorship:Text.ShortText
             | Subspecies of generic:Text.ShortText * specific:Text.ShortText * subspecific:Text.ShortText * authorship:Text.ShortText
             | Variety of generic:Text.ShortText * specific:Text.ShortText * subspecific:Text.ShortText * authorship:Text.ShortText
+            | Clade of name:Text.ShortText
 
         /// A common name given to a taxon, for example 'plants' for Plantae, or
         /// 'Manx Shearwater' for Puffinus puffinus.
@@ -86,6 +87,13 @@ module Population =
             | Ostracod
             | OtherMicrofossilGroup of Text.ShortText
 
+        type BioticProxyCategoryNode =
+            | AncientDNA of Taxonomy.TaxonomicGroup
+            | Microfossil of MicrofossilGroup
+            | Fossil of Taxonomy.TaxonomicGroup
+            | Contemporary of Taxonomy.TaxonomicGroup
+            | OtherProxy of Text.ShortText
+
     /// A hyper-edge representing the relation between a biotic proxy and
     /// taxon, which is only relevant within a particular study timeline context.
     module ProxiedTaxon =
@@ -109,7 +117,7 @@ module Population =
             Name: Text.ShortText
             [<Help("Enter the location for the specific timeline in the granularity specified in the text. Locations may be specified as a spatial point ('Site') or polygon ('Area'), or as political units. If using a point ('site'), you may enter coordinates in decimal degrees (DD) using 'Site' or in DMS (format: 40°26'46\"N,79°58'56\"W) using 'SiteDMS'. If using political units, attempt to ensure that the unit conforms to those in GADM https://www.gadm.org/maps.html. If entering a polygon, enter your polygon in WKT format (e.g. POLYGON((26.41 41.79,43.11 41.79,43.11 32.87,26.41 32.87,26.41 41.79)). You can make WKT format polygons on this web page: http://arthur-e.github.io/Wicket/sandbox-gmaps3.html")>]
             SamplingLocation: Geography.SamplingLocation
-            [<Help("The parent material from which the 'Outcome' (biodiversity measure) has been measured. Example: pollen from a midden is subfossil.")>]
+            [<Help("The parent material from which the 'Outcome' (biodiversity measure) has been measured. Example: pollen from a midden is subfossil. For sequences, you may be asked for a depth range. The 'top depth' means the closest to the surface; depths must be entered in centimetres.")>]
             SampleOrigin: SampleOrigin
             [<Help("An optional free-form description of the characteristics of the location of the time-series. Example: lake surrounded by Salix and Betula tall shrubs.")>]
             SampleLocationDescription: Text.Text option

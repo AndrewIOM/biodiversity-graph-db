@@ -53,6 +53,7 @@ module App =
 
     and ScenarioPage =
         | WoodRing
+        | SimpleEntry
 
     type Model =
         {
@@ -341,9 +342,26 @@ module App =
                                     Scenarios.Automators.automateTreeRing vm source.SelectedSource g)
                                 |> Result.lift (fun g -> { model with Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
                                 |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
-                            | None -> { model with Error = Some "TODO" }, Cmd.none
-                        | None -> { model with Error = Some "TODO" }, Cmd.none
-                    | None -> { model with Error = Some "TODO" }, Cmd.none
+                            | None -> { model with Error = Some "You haven't entered any data yet" }, Cmd.none
+                        | None -> { model with Error = Some "No source selected" }, Cmd.none
+                    | None -> { model with Error = Some "No graph loaded" }, Cmd.none
+                else if typeof<Scenarios.SiteOnlyScenario> = nodeType 
+                then 
+                    match model.Graph with
+                    | Some g ->
+                        match model.SelectedSource with
+                        | Some source ->
+                            match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
+                            | Some (formData: NodeViewModel) -> 
+                                Create.createFromViewModel nodeType formData
+                                |> Result.lift (fun n -> n :?> Scenarios.SiteOnlyScenario)
+                                |> Result.bind(fun vm -> 
+                                    Scenarios.Automators.automateSimpleSite vm source.SelectedSource g)
+                                |> Result.lift (fun g -> { model with Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
+                            | None -> { model with Error = Some "You haven't entered any data yet" }, Cmd.none
+                        | None -> { model with Error = Some "No source selected" }, Cmd.none
+                    | None -> { model with Error = Some "No graph loaded" }, Cmd.none
                 else
                     match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
                     | Some (formData: NodeViewModel) -> 
@@ -760,20 +778,6 @@ module App =
 
     let private removeUnit (x:float<_>) = float x
 
-    /// Lookup time to find if there is a calendar year node corresponding to that year in the
-    /// graph database.
-    let trySelectTimeNode (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) (value:FieldDataTypes.OldDate.OldDateSimple) =
-        let v =
-            match value with
-            | FieldDataTypes.OldDate.OldDateSimple.CalYrBP (f, _) -> removeUnit f
-            | FieldDataTypes.OldDate.OldDateSimple.HistoryYearAD f -> 1950. - removeUnit f
-            | FieldDataTypes.OldDate.OldDateSimple.HistoryYearBC f -> removeUnit f + 1950.
-            | FieldDataTypes.OldDate.OldDateSimple.BP f -> removeUnit f
-        let nearestYear = System.Math.Round(v) |> int
-        let key = Graph.UniqueKey.FriendlyKey("calyearnode",sprintf "%iybp" nearestYear)
-        graph.Nodes<Exposure.TemporalIndex.CalYearNode>()
-        |> Option.bind(fun n -> if Map.containsKey key n then Some (key, value) else None)
-
     /// Connects a date to the pre-Holocene 'out of scope' node, for when a time series contains
     /// a maximum extent that is older than the Holocene boundary.
     let trySelectPreHoloceneScope (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation>) (value:FieldDataTypes.OldDate.OldDateSimple) =
@@ -849,6 +853,7 @@ module App =
         concat [
             h2 [] [ textf "Scenario: %s" title ]
             p [] [ text description ]
+            errorAlert model dispatch
             cond model.SelectedSource <| function
             | None -> p [] [ text "Select a source in the 'extract' view to use the scenario." ]
             | Some s -> 
@@ -889,13 +894,20 @@ module App =
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing ] dispatch
+                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
                     cond model.Page <| function
                         | Page.Scenario scenario ->
                             cond scenario <| function
+                            | SimpleEntry ->
+                                scenarioView<Scenarios.SiteOnlyScenario> 
+                                    Scenarios.SiteOnlyScenario.Title 
+                                    Scenarios.SiteOnlyScenario.Description
+                                    "Streamlined Space/Time/Proxy entry"
+                                    "For quick entry of the spatial-temporal properties of sources, use this form."
+                                    empty model dispatch
                             | WoodRing -> 
                                 scenarioView<Scenarios.WoodRingScenario> 
                                     Scenarios.WoodRingScenario.Title 
@@ -1359,9 +1371,9 @@ module App =
                                                                                                 ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" "Use if the dating method indicates a connection to a qualitative period. Example: peat deposit occurs within a locally-defined pollen zone." (Exposure.ExposureRelation.OccursWithin |> GraphStructure.ProposedRelation.Exposure)
                                                                                             ])
                                                                                             ("Absolute", [
-                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Estimated date (as stated by the authors)" "You may select a date in one of three units: BP, cal yr BP, or AD/BC (calendar year)." (Exposure.ExposureRelation.TimeEstimate >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: earliest date (as stated by the authors)" "Optional. If an uncertainty range has been given for the date, enter the earliest stated date here." (Exposure.ExposureRelation.UncertaintyOldest >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: latest date (as stated by the authors)" "Optional. Enter the latest stated date here." (Exposure.ExposureRelation.UncertaintyYoungest >> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Estimated date (as stated by the authors)" "You may select a date in one of three units: BP, cal yr BP, or AD/BC (calendar year)." (Exposure.ExposureRelation.TimeEstimate >> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: earliest date (as stated by the authors)" "Optional. If an uncertainty range has been given for the date, enter the earliest stated date here." (Exposure.ExposureRelation.UncertaintyOldest >> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: latest date (as stated by the authors)" "Optional. Enter the latest stated date here." (Exposure.ExposureRelation.UncertaintyYoungest >> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
                                                                                             ])
                                                                                         ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                                         ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualDateNode> (fun savedRelations ->
@@ -1391,17 +1403,17 @@ module App =
                                                                             ViewGen.RelationsForms.selectExistingNodeMulti<Exposure.TemporalIndex.QualitativeLabelNode> "Intersects this time period" "" (Exposure.ExposureRelation.IntersectsTime |> GraphStructure.ProposedRelation.Exposure)
                                                                         ])
                                                                         ("Year (within Holocene)", [
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date" "Required." (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date" "Required." (fun _ -> Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date" "Required." (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date" "Required." (fun _ -> Exposure.ExposureRelation.ExtentEarliest |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentEarliestUncertainty |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
                                                                         ])
                                                                         ("Year (goes older than Holocene)", [
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date" "Required." (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
-                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (younger bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date" "Required." (fun _ -> Exposure.ExposureRelation.ExtentLatest |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                            ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: youngest date uncertainty (older bound)" "" (fun _ -> Exposure.ExposureRelation.ExtentLatestUncertainty |> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
                                                                             ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.QualitativeLabelOutOfScopeNode, FieldDataTypes.OldDate.OldDateSimple> "Temporal extent: oldest date (pre-Holocene)" "" (Exposure.ExposureRelation.ExtentEarliestOutOfScope >> GraphStructure.ProposedRelation.Exposure) (trySelectPreHoloceneScope g) model.RelationCreationViewModels])                                                                    
                                                                     ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                     ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualTimelineNode> (fun savedRelations ->
