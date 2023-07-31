@@ -300,6 +300,7 @@ module Storage =
             | Population.Taxonomy.Kingdom l -> Ok l
             | Population.Taxonomy.Phylum l -> Ok l
             | Population.Taxonomy.Class l -> Ok l
+            | Population.Taxonomy.Clade l -> Ok l
             | Population.Taxonomy.Order l -> Ok l
             | Population.Taxonomy.Family l -> Ok l
             | Population.Taxonomy.Subfamily l -> Ok l

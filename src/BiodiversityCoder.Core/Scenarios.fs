@@ -99,7 +99,7 @@ module Scenarios =
         [<Name("Timeline characteristics")>]
         Timeline: Exposure.StudyTimeline.IndividualTimelineNode
         // Taxon
-        ProxyCategories: Population.BioticProxies.BioticProxyCategoryNode //list
+        ProxyCategories: Population.BioticProxies.BioticProxyCategoryNode list
 
     } with 
         static member Title = "Entry for single timeline"
@@ -131,7 +131,7 @@ module Scenarios =
             }
 
             result {
-                let! proxyTypes = notEmpty [ vm.ProxyCategories ]
+                let! proxyTypes = notEmpty vm.ProxyCategories
 
                 // Find existing nodes to relate to:
                 let! startDateNode, startDateRel, (startDateActual: OldDate.OldDateSimple) = 

@@ -874,7 +874,6 @@ module App =
                                         p [] [ text formDescription ]
                                         extraElements
                                         Scenarios.scenarioGen<'a> (model.NodeCreationViewModels |> Map.tryFind (typeof<'a>).Name) (FormMessage >> dispatch)
-                                        // p [] [ textf "%A" ((model.NodeCreationViewModels |> Map.tryFind (typeof<'a>).Name))]
                                     ]
                                 ]
                             ]

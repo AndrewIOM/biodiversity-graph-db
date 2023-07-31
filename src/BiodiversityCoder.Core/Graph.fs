@@ -266,6 +266,7 @@ module GraphStructure =
                     | Taxonomy.TaxonNode.Kingdom l -> sprintf "%s [Kingdom]" l.Value
                     | Taxonomy.TaxonNode.Phylum l -> sprintf "%s [Phylum]" l.Value
                     | Taxonomy.TaxonNode.Class l -> sprintf "%s [Class]" l.Value
+                    | Taxonomy.TaxonNode.Clade l -> sprintf "%s [Clade]" l.Value
                     | Taxonomy.TaxonNode.Order l -> sprintf "%s [Order]" l.Value
                     | Taxonomy.TaxonNode.Family l -> sprintf "%s [Family]" l.Value
                     | Taxonomy.TaxonNode.Subfamily l -> sprintf "%s [Sub-Family]" l.Value
@@ -355,6 +356,7 @@ module GraphStructure =
                 | Taxonomy.TaxonNode.Kingdom l -> sprintf "kingdom_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Phylum l -> sprintf "phylum_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Class l -> sprintf "class_%s" (safeString l.Value) |> toLower |> friendlyKey
+                | Taxonomy.TaxonNode.Clade l -> sprintf "clade_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Order l -> sprintf "order_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Family l -> sprintf "family_%s" (safeString l.Value) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Subfamily l -> sprintf "subfamily_%s" (safeString l.Value) |> toLower |> friendlyKey
