@@ -18,7 +18,7 @@
 		<ApplicationId>im.acm.biodiversitycoder</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationVersion>1.8.0</ApplicationVersion>
+		<ApplicationVersion>1.8.1</ApplicationVersion>
 
 		<!-- Required for C# Hot Reload -->
 		<SupportedOSPlatformVersion Condition="'$(TargetFramework)' == 'net6.0-maccatalyst'">14.0</SupportedOSPlatformVersion>
