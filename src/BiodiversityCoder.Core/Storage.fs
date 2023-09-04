@@ -49,7 +49,7 @@ module Storage =
         if Directory.Exists directory
         then 
             entity
-            |> Seq.map Compact.serialize<'a>
+            |> Seq.map Compact.serialize
             |> Seq.map(fun t -> t.Replace("\n", System.String.Empty)) 
             |> Seq.map(fun t -> System.Text.RegularExpressions.Regex.Replace(t, "\s+(?=(?:(?:[^\"]*\"){2})*[^\"]*$)", ""))
             |> String.concat ",\n\t"
@@ -142,6 +142,20 @@ module Storage =
 
     let replaceIndex directory (nodes:list<NodeIndexItem>) =
         nodes |> makeCacheFileCompactList directory indexFile
+
+    /// Scans the index for changed pretty names. If changed, will update
+    /// the pretty name on the index.
+    let integrityCheckIndex directory =
+        loadIndex directory
+        |> Result.bind(fun r -> 
+            r |> List.toArray |> Array.Parallel.map(fun indexItem ->
+                if indexItem.NodeTypeName = "SourceNode"
+                then
+                    loadAtom directory indexItem.NodeTypeName indexItem.NodeId
+                    |> Result.lift(fun (atom: (Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) -> { indexItem with PrettyName = (atom |> fst |> snd).DisplayName() })
+                else Ok indexItem
+            ) |> Array.toList |> Result.ofList
+        ) |> Result.bind (replaceIndex directory)
 
     // Reorganise index into desired lookup.
     let nodesByType index =
