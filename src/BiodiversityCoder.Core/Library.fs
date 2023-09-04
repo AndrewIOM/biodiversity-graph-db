@@ -236,8 +236,7 @@ module App =
                     | Error e -> { model with Error = Some e }, Cmd.none
                     | Ok nodes ->
                         let nodes = nodes |> Seq.map (Sources.SourceNode.Unscreened >> GraphStructure.Node.SourceNode) |> Seq.toList
-                        // TODO Don't overwrite existing nodes.
-                        match Storage.addNodes g nodes with
+                        match Storage.addOrSkipNodes g nodes with
                         | Ok g -> { model with Graph = Some (fst g) }, Cmd.none
                         | Error e -> { model with Error = Some e }, Cmd.none
                 with e -> { model with Error = Some e.Message }, Cmd.none

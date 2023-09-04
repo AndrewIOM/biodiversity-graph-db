@@ -42,6 +42,20 @@ module Storage =
     let makeCacheFile<'a> directory filename (entity:'a) =
         if Directory.Exists directory
         then Compact.serializeToFile (Path.Combine(directory, filename)) entity |> Ok
+        else Error <| sprintf "Directory does not exist 2: %s" directory        
+
+    /// Output a json file with each object of a collection on a single line
+    let makeCacheFileCompactList<'a> directory filename (entity:'a seq) =
+        if Directory.Exists directory
+        then 
+            entity
+            |> Seq.map Compact.serialize<'a>
+            |> Seq.map(fun t -> t.Replace("\n", System.String.Empty)) 
+            |> Seq.map(fun t -> System.Text.RegularExpressions.Regex.Replace(t, "\s+(?=(?:(?:[^\"]*\"){2})*[^\"]*$)", ""))
+            |> String.concat ",\n\t"
+            |> sprintf "[\n\t%s\n]"
+            |> fun json -> System.IO.File.WriteAllText((Path.Combine(directory, filename)), json)
+            |> Ok
         else Error <| sprintf "Directory does not exist 2: %s" directory
 
     type NodeIndexItem = {
@@ -53,7 +67,6 @@ module Storage =
     /// Types that are indexed in a single file rather than individual files.
     let typesToIndex = [ 
         typeof<Exposure.TemporalIndex.CalYearNode>.Name ]
-        //"ProxiedTaxonNode" ]
 
     let loadIndex directory : Result<NodeIndexItem list,string> =
         loadCacheFile directory indexFile
@@ -87,7 +100,7 @@ module Storage =
             loadAtomsFromIndex directory atomType
             |> Result.lift (Map.add atomKey item)
             |> Result.bind (makeCacheFile directory file)
-        else Map.empty |> Map.add atomKey item |> makeCacheFile directory file
+        else Map.empty |> Map.add atomKey item |> makeCacheFileCompactList directory file
 
     let saveAtom directory (atomType:string) (atomKey:Graph.UniqueKey) (item:(Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) =
         if typesToIndex |> List.contains atomType
@@ -101,7 +114,7 @@ module Storage =
             loadAtomsFromIndex directory atomType
             |> Result.lift (addItemsToMap >> Map.toArray)
             |> Result.bind (makeCacheFile directory file)
-        else Map.empty |> addItemsToMap |> Map.toArray |> makeCacheFile directory file
+        else Map.empty |> addItemsToMap |> Map.toArray |> makeCacheFileCompactList directory file
 
     let saveAtoms directory (atomType:string) (items:seq<(Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>>) =
         if typesToIndex |> List.contains atomType
@@ -124,11 +137,11 @@ module Storage =
             |> Seq.concat
             |> Seq.sortBy(fun n -> n.NodeTypeName, n.NodeId)
             |> Seq.distinct
-            |> makeCacheFile directory indexFile
+            |> makeCacheFileCompactList directory indexFile
             |> Result.lift(fun _ -> [r; nodes] |> List.concat ))
 
     let replaceIndex directory (nodes:list<NodeIndexItem>) =
-        nodes |> makeCacheFile directory indexFile
+        nodes |> makeCacheFileCompactList directory indexFile
 
     // Reorganise index into desired lookup.
     let nodesByType index =
@@ -185,7 +198,7 @@ module Storage =
     let updateNode' updatedGraph (updatedAtom:(Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) fileGraph =
         result {
             // 1. Update the index item (the pretty name may have changed).
-            let! oldIndex = loadIndex (unwrap fileGraph).Directory
+            let! oldIndex = loadIndex (unwrap fileGraph).Directory            
             let oldIndexItem = oldIndex |> Seq.find(fun i -> i.NodeId = (updatedAtom |> fst |> fst))
             let newIndex =
                 oldIndex |> List.except [oldIndexItem] |> List.append [{
