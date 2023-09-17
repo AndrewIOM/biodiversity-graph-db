@@ -69,7 +69,7 @@ module ``When converting a view model to an instance`` =
             ) |> createFromViewModel (typeof<BioticProxyNode>)
         match vm with
         | Ok r -> 
-            let expected = Morphotype <| Microfossil(Pollen, (Text.ShortText.TryCreate(SimpleValue.Text "Salix-type").Value))
+            let expected = Morphotype <| Morphotype.Microfossil(Pollen, (Text.ShortText.TryCreate(SimpleValue.Text "Salix-type").Value))
             Assert.Equal(expected, r :?> BioticProxyNode)
         | Error e -> Assert.True(false, e)
 
@@ -105,24 +105,29 @@ module ``When converting a view model to an instance`` =
         let vm: Result<obj,string> = 
                 Fields([
                     "Date", DU("RadiocarbonCalibrated", Fields([
-                        "calibratedDate", FieldValue(Number 2000.)
-                        "calibrationCurve", FieldValue(Text "IntCal17") ] |> Map.ofList))
+                        "calibratedDate", Fields([
+                            "CalibratedDate", FieldValue(Number 2000.)
+                            "CalibrationCurve", FieldValue(Text "IntCal17")
+                            "UncalibratedDate", DU("None", NotEnteredYet) ] |> Map.ofList)
+                    ] |> Map.ofList))
+                    "MeasurementError", DU("NoDatingErrorSpecified", NotEnteredYet)
                     "Discarded", FieldValue (Boolean false)
                     "MaterialDated", FieldValue (Text "leaves")
-                    "SampleDepth", DU("Some", Fields([
-                        "Value", FieldValue (Number 20.)
-                    ] |> Map.ofList))
-                    "TimeEstimate", FieldValue(Number(2000.))
+                    "SampleDepth", DU("Some", DU("DepthPoint", Fields(["depth", FieldValue (Number 20.)
+                    ] |> Map.ofList)))
                 ] |> Map.ofList
                 ) |> createFromViewModel (typeof<IndividualDateNode>)
         match vm with
         | Ok r -> 
             let expected = {
-                Date = OldDate.RadiocarbonCalibrated(2000.<OldDate.calYearBP>, Text.createShort("IntCal17") |> Result.forceOk)
-                TimeEstimate = 2000.<OldDate.calYearBP>
+                Date = OldDate.RadiocarbonCalibrated({
+                    CalibratedDate = 2000.<OldDate.calYearBP>
+                    CalibrationCurve = Text.createShort("IntCal17") |> Result.forceOk
+                    UncalibratedDate = None})
                 MaterialDated = Text.createShort("leaves") |> Result.forceOk
-                SampleDepth = StratigraphicSequence.createDepth 20. |> forceOk |> Some
+                SampleDepth = StratigraphicSequence.createDepth 20. |> Result.map StratigraphicSequence.DepthInCore.DepthPoint |> Result.forceOk |> Some
                 Discarded = false
+                MeasurementError = OldDate.NoDatingErrorSpecified
             }
             Assert.Equal(expected, r :?> IndividualDateNode)
         | Error e -> Assert.True(false, e)
@@ -136,7 +141,7 @@ module ``When converting a view model to an instance`` =
                     "SamplingLocation", DU("Site", Fields([
                         "latitude", FieldValue(Text "56")
                         "longitude", FieldValue(Text "-170") ] |> Map.ofList))
-                    "SampleOrigin", DU ("LakeSediment", NotEnteredYet)
+                    "SampleOrigin", DU ("LakeSediment", DU ("DepthRangeNotStated", NotEnteredYet))
                     "SampleLocationDescription", DU("None", NotEnteredYet)
                 ] |> Map.ofList
                 ) |> createFromViewModel (typeof<ContextNode>)
@@ -145,7 +150,7 @@ module ``When converting a view model to an instance`` =
             let expected = {
                 Name = Text.createShort("Brooks Range") |> Result.forceOk
                 SamplingLocation = Geography.Site(Geography.createLatitude 56. |> forceOk, Geography.createLongitude -170. |> forceOk)
-                SampleOrigin = LakeSediment
+                SampleOrigin = LakeSediment StratigraphicSequence.DepthExtent.DepthRangeNotStated
                 SampleLocationDescription = None
             }
             Assert.Equal(expected, r :?> ContextNode)

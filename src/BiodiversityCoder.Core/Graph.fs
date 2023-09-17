@@ -299,7 +299,7 @@ module GraphStructure =
                     | GreyLiterature n -> sprintf "Grey literature source: %s" n.Title.Value
                     | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
                     | Database n -> sprintf "Database: %s" n.FullName.Value
-                    | DatabaseEntry n -> sprintf "Database: %s - entry %s" n.UniqueIdentifierInDatabase.Value n.UniqueIdentifierInDatabase.Value
+                    | DatabaseEntry n -> sprintf "Database: %s - entry %s" n.DatabaseAbbreviation.Value n.UniqueIdentifierInDatabase.Value
             | ExposureNode e ->
                 match e with
                 | YearNode y -> sprintf "%i cal yr BP" y.Year

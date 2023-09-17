@@ -27,10 +27,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Setup .NET 6
+      - name: Setup .NET 7
         uses: actions/setup-dotnet@v2
         with:
-          dotnet-version: 6.0.x
+          dotnet-version: 7.0.400
 
       - name: Install MAUI Workload
         run: dotnet workload install maui --ignore-failed-sources
@@ -49,19 +49,21 @@ jobs:
 
   # MAUI MacCatalyst Build
   build-mac:
-    runs-on: macos-12
+    runs-on: macos-13
     name: MacCatalyst Build
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Setup .NET 6
+      - name: Setup .NET 7
         uses: actions/setup-dotnet@v2
         with:
-          dotnet-version: 6.0.x
+          dotnet-version: 7.0.400
 
-      - name: Install MAUI Workload
-        run: dotnet workload install maui --ignore-failed-sources --sdk-version 6.0.404
+      - name: Install MAUI Workloads
+        run: |
+          dotnet workload install maccatalyst --ignore-failed-sources
+          dotnet workload install maui --ignore-failed-sources
 
       - name: Restore Dependencies
         run: dotnet restore src/BiodiversityCoder/BiodiversityCoder.csproj

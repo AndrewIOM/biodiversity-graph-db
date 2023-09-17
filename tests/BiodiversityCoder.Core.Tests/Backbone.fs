@@ -1,4 +1,4 @@
-module FormTests
+module BackboneTests
 
 open System
 open Xunit
