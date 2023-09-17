@@ -11,6 +11,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{D80B04FF
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "BiodiversityCoder.Core.Tests", "tests\BiodiversityCoder.Core.Tests\BiodiversityCoder.Core.Tests.fsproj", "{063B8F95-B99D-423B-A316-1204A77E1B38}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BiodiversityCoder", "src\BiodiversityCoder\BiodiversityCoder.csproj", "{4E517443-7692-481C-9C30-055642A24F1B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,9 +30,14 @@ Global
 		{063B8F95-B99D-423B-A316-1204A77E1B38}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{063B8F95-B99D-423B-A316-1204A77E1B38}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{063B8F95-B99D-423B-A316-1204A77E1B38}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E517443-7692-481C-9C30-055642A24F1B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E517443-7692-481C-9C30-055642A24F1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E517443-7692-481C-9C30-055642A24F1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E517443-7692-481C-9C30-055642A24F1B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{15DB8F1F-A246-43C5-922B-CA35E22D569C} = {B00CE350-F231-4E64-8C78-C0E51ADEA8BE}
 		{063B8F95-B99D-423B-A316-1204A77E1B38} = {D80B04FF-FA62-4C83-8236-4AC9DBB607DE}
+		{4E517443-7692-481C-9C30-055642A24F1B} = {B00CE350-F231-4E64-8C78-C0E51ADEA8BE}
 	EndGlobalSection
 EndGlobal
