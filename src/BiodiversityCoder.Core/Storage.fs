@@ -23,8 +23,8 @@ module SingleLineCompactSerialiser =
             let o = Newtonsoft.Json.Linq.JObject.FromObject(i, serialiser)
             writer.WriteRaw("\t")
             o.WriteTo(writer)
-            if n = l - 1 then writer.WriteRaw("\n")
-            else writer.WriteRaw(",\n")
+            if n = l - 1 then writer.WriteRaw("\n\n")
+            else writer.WriteRaw(",\n\n")
             writer.Flush() )
         writer.WriteRaw("]")
 
