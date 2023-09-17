@@ -1,5 +1,34 @@
 namespace BiodiversityCoder.Core
 
+/// Custom compact serialiser that saves each record in a list on a single line
+module SingleLineCompactSerialiser =
+    open Newtonsoft.Json
+    open Microsoft.FSharpLu.Json
+
+    let inline settings< ^T> =
+        let settings =
+            JsonSerializerSettings(
+                NullValueHandling = NullValueHandling.Ignore,
+                MissingMemberHandling = MissingMemberHandling.Error
+            )
+        settings.Converters.Add(CompactUnionJsonConverter(true, true))
+        settings
+
+    let serialiseToStream (index: 'a seq) (stream:System.IO.StreamWriter) =
+        let serialiser = JsonSerializer.Create(settings)
+        use writer = new JsonTextWriter(stream)
+        let l = index |> Seq.length
+        writer.WriteRaw("[\n")
+        index |> Seq.iteri(fun n i ->
+            let o = Newtonsoft.Json.Linq.JObject.FromObject(i, serialiser)
+            writer.WriteRaw("\t")
+            o.WriteTo(writer)
+            if n = l - 1 then writer.WriteRaw("\n")
+            else writer.WriteRaw(",\n")
+            writer.Flush() )
+        writer.WriteRaw("]")
+
+
 /// IO for storing the graph database.
 /// Nodes are stored as individual files.
 module Storage =
@@ -44,25 +73,23 @@ module Storage =
         then Compact.serializeToFile (Path.Combine(directory, filename)) entity |> Ok
         else Error <| sprintf "Directory does not exist 2: %s" directory        
 
-    /// Output a json file with each object of a collection on a single line
-    let makeCacheFileCompactList<'a> directory filename (entity:'a seq) =
-        if Directory.Exists directory
-        then 
-            entity
-            |> Seq.map Compact.serialize
-            |> Seq.map(fun t -> t.Replace("\n", System.String.Empty)) 
-            |> Seq.map(fun t -> System.Text.RegularExpressions.Regex.Replace(t, "\s+(?=(?:(?:[^\"]*\"){2})*[^\"]*$)", ""))
-            |> String.concat ",\n\t"
-            |> sprintf "[\n\t%s\n]"
-            |> fun json -> System.IO.File.WriteAllText((Path.Combine(directory, filename)), json)
-            |> Ok
-        else Error <| sprintf "Directory does not exist 2: %s" directory
-
     type NodeIndexItem = {
         NodeId: Graph.UniqueKey
         NodeTypeName: string
         PrettyName: string
     }
+
+    /// Output a json file with each object of a collection on a single line
+    let makeCacheFileCompactList directory filename (entity:NodeIndexItem seq) =
+        if Directory.Exists directory
+        then 
+            try
+                use file = File.Open(Path.Combine(directory, filename), FileMode.Create)
+                use stream = new StreamWriter(file, System.Text.Encoding.UTF8)
+                SingleLineCompactSerialiser.serialiseToStream entity stream |> Ok
+            with
+            | ex -> Error <| sprintf "%s - %s" ex.Message ex.StackTrace
+        else Error <| sprintf "Directory does not exist 2: %s" directory
 
     /// Types that are indexed in a single file rather than individual files.
     let typesToIndex = [ 
@@ -100,7 +127,7 @@ module Storage =
             loadAtomsFromIndex directory atomType
             |> Result.lift (Map.add atomKey item)
             |> Result.bind (makeCacheFile directory file)
-        else Map.empty |> Map.add atomKey item |> makeCacheFileCompactList directory file
+        else Map.empty |> Map.add atomKey item |> makeCacheFile directory file
 
     let saveAtom directory (atomType:string) (atomKey:Graph.UniqueKey) (item:(Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) =
         if typesToIndex |> List.contains atomType
@@ -114,7 +141,7 @@ module Storage =
             loadAtomsFromIndex directory atomType
             |> Result.lift (addItemsToMap >> Map.toArray)
             |> Result.bind (makeCacheFile directory file)
-        else Map.empty |> addItemsToMap |> Map.toArray |> makeCacheFileCompactList directory file
+        else Map.empty |> addItemsToMap |> Map.toArray |> makeCacheFile directory file
 
     let saveAtoms directory (atomType:string) (items:seq<(Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>>) =
         if typesToIndex |> List.contains atomType
@@ -149,7 +176,7 @@ module Storage =
         loadIndex directory
         |> Result.bind(fun r -> 
             r |> List.toArray |> Array.Parallel.map(fun indexItem ->
-                if indexItem.NodeTypeName = "SourceNode"
+                if indexItem.NodeTypeName = "SourceNode" || indexItem.NodeTypeName = "TaxonNode" || indexItem.NodeTypeName = "BioticProxyNode"
                 then
                     loadAtom directory indexItem.NodeTypeName indexItem.NodeId
                     |> Result.lift(fun (atom: (Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) -> { indexItem with PrettyName = (atom |> fst |> snd).DisplayName() })
@@ -211,17 +238,22 @@ module Storage =
 
     let updateNode' updatedGraph (updatedAtom:(Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) fileGraph =
         result {
-            // 1. Update the index item (the pretty name may have changed).
+            // // 1. Update the index item (only if the pretty name has changed).
             let! oldIndex = loadIndex (unwrap fileGraph).Directory            
             let oldIndexItem = oldIndex |> Seq.find(fun i -> i.NodeId = (updatedAtom |> fst |> fst))
-            let newIndex =
-                oldIndex |> List.except [oldIndexItem] |> List.append [{
-                    NodeId = (updatedAtom |> fst |> fst)
-                    NodeTypeName = (updatedAtom |> fst |> snd).NodeType()
-                    PrettyName = (updatedAtom |> fst |> snd).DisplayName()
-                }] |> List.sortBy(fun n -> n.NodeTypeName, n.NodeId)
-            do! replaceIndex (unwrap fileGraph).Directory newIndex
-            
+            let newIndex, newIndexItem =
+                if oldIndexItem.PrettyName <> (updatedAtom |> fst |> snd).DisplayName()
+                then
+                    let newIndexItem = {
+                            NodeId = (updatedAtom |> fst |> fst)
+                            NodeTypeName = (updatedAtom |> fst |> snd).NodeType()
+                            PrettyName = (updatedAtom |> fst |> snd).DisplayName() }
+                    oldIndex |> List.except [oldIndexItem] |> List.append [ newIndexItem ] |> List.sortBy(fun n -> n.NodeTypeName, n.NodeId), newIndexItem
+                else oldIndex, oldIndexItem
+            if newIndexItem <> oldIndexItem
+            then do! replaceIndex (unwrap fileGraph).Directory newIndex
+            else do! Ok()
+
             // 2. Update the individual cached file.
             do! saveAtom (unwrap fileGraph).Directory ((updatedAtom |> fst |> snd).NodeType()) ((updatedAtom |> fst |> fst)) updatedAtom
             
