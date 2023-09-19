@@ -50,6 +50,7 @@ module App =
         | Exposure
         | Outcome
         | Scenario of ScenarioPage
+        | Statistics
 
     and ScenarioPage =
         | WoodRing
@@ -59,6 +60,7 @@ module App =
         {
             Page: Page
             Graph: Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option
+            Statistics: Statistics option
             Import: string
             Error: string option
             FolderLocation: string
@@ -69,6 +71,16 @@ module App =
             SelectedSource: SelectedSource option
             TaxonLookup: TaxonomicLookupModel
         }
+
+    and Statistics = {
+        TimeGenerated: System.DateTime
+        IncludedSources: int
+        ExcludedSources: int
+        CompleteSources: int
+        SecondarySources: int
+        PrimarySources: int
+        ScreenedNotCoded: int
+    }
 
     and TaxonomicLookupModel = {
         Rank: string
@@ -117,7 +129,7 @@ module App =
         | Exclude of because:Sources.ExclusionReason * notes:FieldDataTypes.Text.Text
 
     let initModel =
-        { RelationCreationViewModels = Map.empty; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        { RelationCreationViewModels = Map.empty; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
 
     type Message =
         | SetPage of Page
@@ -128,6 +140,7 @@ module App =
         | ChangeImportText of string
         | ImportBibtex
         | ImportColandr
+        | GenStatistics
         | FormMessage of FormMessage
         | SelectSource of key:Graph.UniqueKey
         | LookupTaxon of LookupTaxonMessage
@@ -264,12 +277,55 @@ module App =
             match Storage.loadOrInitGraph folder with
             | Ok g ->  
                 match (g.Nodes<Exposure.TemporalIndex.CalYearNode> ()) with
-                | Some _ -> { model with Graph = Some g }, Cmd.none
+                | Some _ -> { model with Graph = Some g }, Cmd.ofMsg GenStatistics
                 | None ->
                     match Storage.seedGraph g with
                     | Ok seeded -> { model with Graph = Some seeded }, Cmd.none
                     | Error e -> { model with Error = Some e }, Cmd.none
             | Error e -> { model with Error = Some e }, Cmd.none
+        
+        | GenStatistics ->
+            match model.Graph with
+            | Some g ->
+                let stats = 
+                    g.Nodes<Sources.SourceNode> ()
+                    |> Option.map(fun nodes ->
+                        Seq.map(fun (kv: System.Collections.Generic.KeyValuePair<Graph.UniqueKey,string>) -> kv.Key) nodes
+                        |> Seq.toList
+                        |> Storage.loadAtoms g.Directory (typeof<Sources.SourceNode>).Name
+                        |> Result.lift(fun sources ->
+                            sources |> List.fold(fun stats (s: Graph.Atom<GraphStructure.Node,GraphStructure.Relation>) ->
+                                match s |> fst |> snd with
+                                | GraphStructure.Node.SourceNode s2 ->
+                                    match s2 with
+                                    | Sources.SourceNode.Excluded _ -> { stats with ExcludedSources = stats.ExcludedSources + 1 }
+                                    | Sources.SourceNode.Included (i: Sources.Source,prog) ->
+                                        match i with
+                                        | Sources.Bibliographic bib ->
+                                            let isPrimary = 
+                                                s |> snd |> Seq.tryFind(fun (_,_,_,d: GraphStructure.Relation) -> 
+                                                    match d with 
+                                                    | GraphStructure.Relation.Source s -> 
+                                                        match s with
+                                                        | Sources.SourceRelation.HasTemporalExtent -> true
+                                                        | _ -> false
+                                                    | _ -> false ) |> Option.isSome
+                                            match prog with
+                                            | Sources.CodingProgress.CompletedNone -> { stats with IncludedSources = stats.IncludedSources + 1; ScreenedNotCoded = stats.ScreenedNotCoded + 1; PrimarySources = (if isPrimary then stats.PrimarySources + 1 else stats.PrimarySources) }
+                                            | Sources.CodingProgress.InProgress _
+                                            | Sources.CodingProgress.Stalled _ -> { stats with IncludedSources = stats.IncludedSources + 1; PrimarySources = (if isPrimary then stats.PrimarySources + 1 else stats.PrimarySources)  }
+                                            | Sources.CodingProgress.CompletedAll -> 
+                                                { stats with CompleteSources = stats.CompleteSources + 1; IncludedSources = stats.IncludedSources + 1; SecondarySources = (if not isPrimary then stats.SecondarySources + 1 else stats.SecondarySources); PrimarySources = (if isPrimary then stats.PrimarySources + 1 else stats.PrimarySources)  }
+                                        | _ -> stats
+                                    | _ -> stats
+                                | _ -> stats
+                            ) { TimeGenerated = System.DateTime.Now; IncludedSources = 0; CompleteSources = 0; ExcludedSources = 0; SecondarySources = 0; PrimarySources = 0; ScreenedNotCoded = 0 }
+                        )
+                        |> Result.toOption
+                    ) |> Option.flatten
+                { model with Statistics = stats }, Cmd.none
+            | None -> { model with Error = Some "No graph loaded" }, Cmd.none
+        
         | FormMessage m ->
             match m with
             | RelateNodes(source, sink, rel) -> 
@@ -893,7 +949,7 @@ module App =
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry ] dispatch
+                sidebarView [ Page.Extract; Page.Statistics; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
@@ -1030,12 +1086,41 @@ module App =
                                 ]
                             ]
                         | Page.Outcome -> div [] [ text "There are no options to display" ]
+                        | Page.Statistics -> concat [
+                                h2 [] [ text "Statistics" ]
+                                hr []
+                                p [] [ text "Contains various statistics about the compiled graph database." ]
+                                errorAlert model dispatch
+                                cond model.Statistics <| function
+                                | Some stats ->
+                                    div [ _class "card mb-4" ] [
+                                        div [ _class "card-header text-bg-primary" ] [ text "Sources - Statistics" ]
+                                        div [ _class "card-body" ] [
+                                            dl [ _class "row" ] [
+                                                dt [ _class "col-sm-3" ] [ text "Generated at" ]
+                                                dd [ _class "col-sm-9" ] [ textf "%A" stats.TimeGenerated ]
+                                                dt [ _class "col-sm-3" ] [ text "Included bibliographic sources" ]
+                                                dd [ _class "col-sm-9" ] [ textf "%A" stats.IncludedSources ]
+                                                dt [ _class "col-sm-3" ] [ text "Excluded bibliographic sources" ]
+                                                dd [ _class "col-sm-9" ] [ textf "%A" stats.ExcludedSources ]
+                                                dt [ _class "col-sm-3" ] [ text "Included secondary bibliographic sources" ]
+                                                dd [ _class "col-sm-9" ] [ textf "%A" stats.SecondarySources ]
+                                                dt [ _class "col-sm-3" ] [ text "Included primary bibliographic sources" ]
+                                                dd [ _class "col-sm-9" ] [ textf "%A" stats.PrimarySources ]
+                                                dt [ _class "col-sm-3" ] [ text "Screened but not data coded" ]
+                                                dd [ _class "col-sm-9" ] [ textf "%A" stats.ScreenedNotCoded ]
+                                                dt [ _class "col-sm-3" ] [ text "Data coding completed for bibliographic sources" ]
+                                                dd [ _class "col-sm-9" ] [ textf "%A" stats.CompleteSources ]
+                                            ]
+                                        ]
+                                    ]
+                                | None -> empty
+                            ]
                         | Page.Sources -> concat [
                                 h2 [] [ text "Sources Manager" ]
                                 hr []
                                 p [] [ text "Sources may be imported in bulk from Colandr screening, or added individually." ]
                                 errorAlert model dispatch
-
                                 h3 [] [ text "Add an individual source - manually" ]
                                 hr []
                                 div [ _class "card mb-4" ] [
