@@ -238,28 +238,40 @@ module Storage =
 
     let updateNode' updatedGraph (updatedAtom:(Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) fileGraph =
         result {
-            // // 1. Update the index item (only if the pretty name has changed).
-            let! oldIndex = loadIndex (unwrap fileGraph).Directory            
-            let oldIndexItem = oldIndex |> Seq.find(fun i -> i.NodeId = (updatedAtom |> fst |> fst))
-            let newIndex, newIndexItem =
-                if oldIndexItem.PrettyName <> (updatedAtom |> fst |> snd).DisplayName()
+            // 1. Update the index item (only if the pretty name has changed).
+            let nodeType = (updatedAtom |> fst |> snd).NodeType()
+            let! oldIndexedPrettyName = 
+                (unwrap fileGraph).NodesByType 
+                |> Map.tryFind nodeType 
+                |> Option.bind (Map.tryFind (updatedAtom |> fst |> fst)) 
+                |> Result.ofOption "Could not find old index item"
+            let! newIndex =
+                if oldIndexedPrettyName <> (updatedAtom |> fst |> snd).DisplayName()
                 then
-                    let newIndexItem = {
-                            NodeId = (updatedAtom |> fst |> fst)
-                            NodeTypeName = (updatedAtom |> fst |> snd).NodeType()
-                            PrettyName = (updatedAtom |> fst |> snd).DisplayName() }
-                    oldIndex |> List.except [oldIndexItem] |> List.append [ newIndexItem ] |> List.sortBy(fun n -> n.NodeTypeName, n.NodeId), newIndexItem
-                else oldIndex, oldIndexItem
-            if newIndexItem <> oldIndexItem
-            then do! replaceIndex (unwrap fileGraph).Directory newIndex
+                    result {
+                        let! oldIndex = loadIndex (unwrap fileGraph).Directory
+                        let! oldIndexItem = 
+                            oldIndex |> Seq.tryFind(fun i -> i.NodeId = (updatedAtom |> fst |> fst)) 
+                            |> Result.ofOption (sprintf "Could not locate node id '%A' (%s) in node index" (updatedAtom |> fst |> fst) oldIndexedPrettyName)
+                        let newIndexItem = {
+                                NodeId = (updatedAtom |> fst |> fst)
+                                NodeTypeName = (updatedAtom |> fst |> snd).NodeType()
+                                PrettyName = (updatedAtom |> fst |> snd).DisplayName() }
+                        return Some (oldIndex |> List.except [oldIndexItem] |> List.append [ newIndexItem ] |> List.sortBy(fun n -> n.NodeTypeName, n.NodeId))
+                    }
+                else Ok None
+            if newIndex.IsSome
+            then do! replaceIndex (unwrap fileGraph).Directory newIndex.Value
             else do! Ok()
 
             // 2. Update the individual cached file.
             do! saveAtom (unwrap fileGraph).Directory ((updatedAtom |> fst |> snd).NodeType()) ((updatedAtom |> fst |> fst)) updatedAtom
             
             // 3. Update file-based graph record.
-            let newNodesByType = nodesByType newIndex
-            return FileBasedGraph { (unwrap fileGraph) with NodesByType = newNodesByType; Graph = updatedGraph }
+            let updatedNodesByType =
+                if newIndex.IsSome then nodesByType newIndex.Value
+                else (unwrap fileGraph).NodesByType
+            return FileBasedGraph { (unwrap fileGraph) with NodesByType = updatedNodesByType; Graph = updatedGraph }
         }
 
     /// Update the data associated with a node.
