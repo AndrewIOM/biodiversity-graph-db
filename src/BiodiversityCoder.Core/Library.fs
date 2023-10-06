@@ -51,6 +51,7 @@ module App =
         | Outcome
         | Scenario of ScenarioPage
         | Statistics
+        | Settings
 
     and ScenarioPage =
         | WoodRing
@@ -70,6 +71,7 @@ module App =
             RelationCreationViewModels: Map<string * string, Map<string,NodeViewModel * GraphStructure.ProposedRelation option>> // proposed is the computed relation. With this, can attempt to link to existing node.
             SelectedSource: SelectedSource option
             TaxonLookup: TaxonomicLookupModel
+            LeaveFieldsFilled: bool
         }
 
     and MessageType =
@@ -134,7 +136,7 @@ module App =
         | Exclude of because:Sources.ExclusionReason * notes:FieldDataTypes.Text.Text
 
     let initModel =
-        { RelationCreationViewModels = Map.empty; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Message = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        { RelationCreationViewModels = Map.empty; LeaveFieldsFilled = false; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Message = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
 
     type Message =
         | SetPage of Page
@@ -142,10 +144,12 @@ module App =
         | SelectFolder
         | SetFolderManually of string
         | SelectedFolder of string
+        | ResetApplication
         | ChangeImportText of string
         | ImportBibtex
         | ImportColandr
         | GenStatistics
+        | ToggleLeaveFilled
         | FormMessage of FormMessage
         | SelectSource of key:Graph.UniqueKey
         | LookupTaxon of LookupTaxonMessage
@@ -233,6 +237,7 @@ module App =
         match message with
         | SetPage page -> { model with Page = page }, Cmd.none
         | DismissMessage -> { model with Message = None }, Cmd.none
+        | ToggleLeaveFilled -> { model with LeaveFieldsFilled = not model.LeaveFieldsFilled }, Cmd.none
         | ChangeImportText s -> { model with Import = s }, Cmd.none
         | SetFolderManually s -> { model with FolderLocation = s }, Cmd.none
         | ImportBibtex -> 
@@ -288,7 +293,7 @@ module App =
                     | Ok seeded -> { model with Graph = Some seeded }, Cmd.none
                     | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
             | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
-        
+        | ResetApplication -> { fst initModel with Message = Some (InfoMessage, "Reset the application and reloaded database") }, Cmd.ofMsg (SelectedFolder model.FolderLocation)
         | GenStatistics ->
             match model.Graph with
             | Some g ->
@@ -400,7 +405,7 @@ module App =
                                 |> Result.lift (fun n -> n :?> Scenarios.WoodRingScenario)
                                 |> Result.bind(fun vm -> 
                                     Scenarios.Automators.automateTreeRing vm source.SelectedSource g)
-                                |> Result.lift (fun g -> { model with Message = Some (SuccessMessage, "Successfully saved tree-ring scenario information"); Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                |> Result.lift (fun g -> { model with Message = Some (SuccessMessage, "Successfully saved tree-ring scenario information"); Graph = Some g; NodeCreationViewModels = (if model.LeaveFieldsFilled then model.NodeCreationViewModels else model.NodeCreationViewModels |> Map.remove nodeType.Name); NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
                                 |> Result.lower (fun r -> r) (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
                             | None -> { model with Message = Some (ErrorMessage, "You haven't entered any data yet") }, Cmd.none
                         | None -> { model with Message = Some (ErrorMessage, "No source selected") }, Cmd.none
@@ -417,7 +422,7 @@ module App =
                                 |> Result.lift (fun n -> n :?> Scenarios.SiteOnlyScenario)
                                 |> Result.bind(fun vm -> 
                                     Scenarios.Automators.automateSimpleSite vm source.SelectedSource g)
-                                |> Result.lift (fun g -> { model with Message = Some (SuccessMessage, "Successfully saved timeline information"); Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                |> Result.lift (fun g -> { model with Message = Some (SuccessMessage, "Successfully saved timeline information"); Graph = Some g; NodeCreationViewModels = (if model.LeaveFieldsFilled then model.NodeCreationViewModels else model.NodeCreationViewModels |> Map.remove nodeType.Name); NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
                                 |> Result.lower (fun r -> r) (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
                             | None -> { model with Message = Some (ErrorMessage, "You haven't entered any data yet") }, Cmd.none
                         | None -> { model with Message = Some (ErrorMessage, "No source selected") }, Cmd.none
@@ -466,7 +471,7 @@ module App =
                                             | ThisIsSink (sourceKey, proposed) -> Storage.addRelationByKey fbg sourceKey ((addedNodes.Head |> fst |> fst)) proposed
                                             | ThisIsSource (sinkKey, proposed) -> Storage.addRelationByKey fbg ((addedNodes.Head |> fst |> fst)) sinkKey proposed
                                         )) (Ok graph) proposedRels)
-                                |> Result.lift (fun g -> { model with Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name })
+                                |> Result.lift (fun g -> { model with Graph = Some g; Message = (if model.LeaveFieldsFilled then Some (SuccessMessage, "Successfully added node information") else None); NodeCreationViewModels = (if model.LeaveFieldsFilled then model.NodeCreationViewModels else model.NodeCreationViewModels |> Map.remove nodeType.Name); NodeCreationRelations = (if model.LeaveFieldsFilled then model.NodeCreationRelations else model.NodeCreationRelations |> Map.remove nodeType.Name) })
                                 |> Result.lower (fun m -> 
                                     match model.SelectedSource with
                                     | Some s -> m, Cmd.ofMsg (SelectSource (s.SelectedSource |> fst |> fst))
@@ -941,6 +946,7 @@ module App =
                                         p [] [ text formDescription ]
                                         extraElements
                                         Scenarios.scenarioGen<'a> (model.NodeCreationViewModels |> Map.tryFind (typeof<'a>).Name) (FormMessage >> dispatch)
+                                        textf "%A" ((model.NodeCreationViewModels |> Map.tryFind (typeof<'a>).Name))
                                     ]
                                 ]
                             ]
@@ -961,11 +967,29 @@ module App =
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Statistics; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry ] dispatch
+                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry; Page.Statistics; Page.Settings ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
                     cond model.Page <| function
+                        | Page.Settings -> concat [
+                                h2 [] [ text "Settings" ]
+                                p [] [ text "Here you can change the interface's behaviour and reload the database." ]
+                                div [ _class "row mb-3" ] [
+                                    label [ attr.``for`` "toggle-keep-values"; _class "col-sm-2 col-form-label" ] [ text "Keep field values after successful data entry" ]
+                                    div [ _class "col-sm-10" ] [
+                                        input [ attr.``type`` "checkbox"; bind.``checked`` model.LeaveFieldsFilled (fun _ -> ToggleLeaveFilled |> dispatch) ]
+                                        small [ _class "form-text" ] [ text "If you are entering repetitive information, you may toggle this option on to temporarily keep values filled when a node is successfully created." ]
+                                    ]
+                                ]
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Reload database" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "By selecting reload below, the application will be reset. All form fields will be emptied and the database reloaded." ]
+                                        button [ _class "btn btn-danger"; on.click(fun _ -> ResetApplication |> dispatch) ] [ text "Reload Database" ]
+                                    ]
+                                ]
+                            ]
                         | Page.Scenario scenario ->
                             cond scenario <| function
                             | SimpleEntry ->
