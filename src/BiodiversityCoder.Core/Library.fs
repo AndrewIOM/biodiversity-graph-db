@@ -51,6 +51,7 @@ module App =
         | Outcome
         | Scenario of ScenarioPage
         | Statistics
+        | Settings
 
     and ScenarioPage =
         | WoodRing
@@ -62,7 +63,7 @@ module App =
             Graph: Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option
             Statistics: Statistics option
             Import: string
-            Error: string option
+            Message: (MessageType * string) option
             FolderLocation: string
             NodeCreationViewModels: Map<string, NodeViewModel>
             NodeCreationValidationErrors: Map<string, (string * string) list>
@@ -70,7 +71,13 @@ module App =
             RelationCreationViewModels: Map<string * string, Map<string,NodeViewModel * GraphStructure.ProposedRelation option>> // proposed is the computed relation. With this, can attempt to link to existing node.
             SelectedSource: SelectedSource option
             TaxonLookup: TaxonomicLookupModel
+            LeaveFieldsFilled: bool
         }
+
+    and MessageType =
+        | ErrorMessage
+        | SuccessMessage
+        | InfoMessage
 
     and Statistics = {
         TimeGenerated: System.DateTime
@@ -129,18 +136,20 @@ module App =
         | Exclude of because:Sources.ExclusionReason * notes:FieldDataTypes.Text.Text
 
     let initModel =
-        { RelationCreationViewModels = Map.empty; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Error = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        { RelationCreationViewModels = Map.empty; LeaveFieldsFilled = false; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Message = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
 
     type Message =
         | SetPage of Page
-        | DismissError
+        | DismissMessage
         | SelectFolder
         | SetFolderManually of string
         | SelectedFolder of string
+        | ResetApplication
         | ChangeImportText of string
         | ImportBibtex
         | ImportColandr
         | GenStatistics
+        | ToggleLeaveFilled
         | FormMessage of FormMessage
         | SelectSource of key:Graph.UniqueKey
         | LookupTaxon of LookupTaxonMessage
@@ -168,10 +177,10 @@ module App =
 
     let isBatchMode timeline cont (model:Model) =
         match model.SelectedSource with
-        | None -> { model with Error = Some "Source was not selected." }, Cmd.none
+        | None -> { model with Message = Some (ErrorMessage, "Source was not selected.") }, Cmd.none
         | Some source ->
             match source.AddBioticHyperedgeBatch |> Map.tryFind timeline with
-            | None -> { model with Error = Some "Not in batch mode." }, Cmd.none
+            | None -> { model with Message = Some (ErrorMessage, "Not in batch mode.") }, Cmd.none
             | Some batch -> cont (source,batch)
 
     let commitProxiedTaxon (proxyId: Graph.UniqueKey) (inferId:Graph.UniqueKey) (taxaIds:Graph.UniqueKey list) (measureId:Graph.UniqueKey) timelineId g = result {
@@ -227,36 +236,37 @@ module App =
     let update (openFolder:unit -> Task<string>) message model =
         match message with
         | SetPage page -> { model with Page = page }, Cmd.none
-        | DismissError -> { model with Error = None }, Cmd.none
+        | DismissMessage -> { model with Message = None }, Cmd.none
+        | ToggleLeaveFilled -> { model with LeaveFieldsFilled = not model.LeaveFieldsFilled }, Cmd.none
         | ChangeImportText s -> { model with Import = s }, Cmd.none
         | SetFolderManually s -> { model with FolderLocation = s }, Cmd.none
         | ImportBibtex -> 
             match BibtexParser.parse model.Import with
-            | Error e -> { model with Error = Some e }, Cmd.none
+            | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
             | Ok nodes ->
                 let nodes = nodes |> List.map (Sources.SourceNode.Unscreened >> GraphStructure.Node.SourceNode)
                 match model.Graph with
                 | Some g -> 
                     match Storage.addNodes g nodes with
                     | Ok g -> { model with Graph = Some (fst g) }, Cmd.none
-                    | Error e -> { model with Error = Some e }, Cmd.none
+                    | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
                 | None -> model, Cmd.none
         | ImportColandr ->
             match model.Graph with
             | Some g ->
                 try
                     match ColandrParser.syncColandr (System.IO.Path.Combine(g.Directory,"colandr-titleabs-screen-results.csv")) with
-                    | Error e -> { model with Error = Some e }, Cmd.none
+                    | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
                     | Ok nodes ->
                         let nodes = nodes |> Seq.map (Sources.SourceNode.Unscreened >> GraphStructure.Node.SourceNode) |> Seq.toList
                         match Storage.addOrSkipNodes g nodes with
                         | Ok g -> { model with Graph = Some (fst g) }, Cmd.none
-                        | Error e -> { model with Error = Some e }, Cmd.none
-                with e -> { model with Error = Some e.Message }, Cmd.none
-            | None -> { model with Error = Some "There was no graph" }, Cmd.none
+                        | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
+                with e -> { model with Message = Some (ErrorMessage, e.Message) }, Cmd.none
+            | None -> { model with Message = Some (ErrorMessage, "There was no graph") }, Cmd.none
         | SelectSource k ->
             match model.Graph with
-            | None -> { model with Error = Some <| "Can't select a source when no graph is loaded." }, Cmd.none
+            | None -> { model with Message = Some (ErrorMessage, "Can't select a source when no graph is loaded.") }, Cmd.none
             | Some g ->
                 match g |> Storage.atomByKey k with
                 | Some atom -> 
@@ -267,7 +277,7 @@ module App =
                         then { model with SelectedSource = Some { AddBioticHyperedgeBatch = alreadySelected.AddBioticHyperedgeBatch; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                         else { model with SelectedSource = Some { AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                     | None -> { model with SelectedSource = Some { AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
-                | None -> { model with Error = Some <| sprintf "Could not find source with key %s [%A]" k.AsString k }, Cmd.none
+                | None -> { model with Message = Some (ErrorMessage, sprintf "Could not find source with key %s [%A]" k.AsString k) }, Cmd.none
         | SelectFolder ->
             model, Cmd.OfAsync.result(async {
                 let! folder = openFolder () |> Async.AwaitTask
@@ -281,9 +291,9 @@ module App =
                 | None ->
                     match Storage.seedGraph g with
                     | Ok seeded -> { model with Graph = Some seeded }, Cmd.none
-                    | Error e -> { model with Error = Some e }, Cmd.none
-            | Error e -> { model with Error = Some e }, Cmd.none
-        
+                    | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
+            | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
+        | ResetApplication -> { fst initModel with Message = Some (InfoMessage, "Reset the application and reloaded database") }, Cmd.ofMsg (SelectedFolder model.FolderLocation)
         | GenStatistics ->
             match model.Graph with
             | Some g ->
@@ -324,7 +334,7 @@ module App =
                         |> Result.toOption
                     ) |> Option.flatten
                 { model with Statistics = stats }, Cmd.none
-            | None -> { model with Error = Some "No graph loaded" }, Cmd.none
+            | None -> { model with Message = Some (ErrorMessage, "No graph loaded") }, Cmd.none
         
         | FormMessage m ->
             match m with
@@ -338,9 +348,9 @@ module App =
                         return updatedGraph
                     } |> Result.lower
                         (fun g -> { model with Graph = Some g }, Cmd.none )
-                            (fun e -> { model with Error = Some e }, Cmd.none)
+                            (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
 
-                | None -> { model with Error = Some "No graph loaded" }, Cmd.none
+                | None -> { model with Message = Some (ErrorMessage, "No graph loaded") }, Cmd.none
             | EnterNodeCreationData(formId, vm) -> 
                 match formId with
                 | "EligbilityCriteria" ->
@@ -379,8 +389,8 @@ module App =
                             |> Result.lift GraphStructure.Node.SourceNode
                             |> Result.bind (fun n -> Storage.updateNode g (source.SelectedSource |> fst |> fst, n))
                             |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
-                            |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
-                        | None -> { model with Error = Some "Cannot screen source as graph is not loaded." }, Cmd.none
+                            |> Result.lower (fun r -> r) (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
+                        | None -> { model with Message = Some (ErrorMessage, "Cannot screen source as graph is not loaded.") }, Cmd.none
                     | None -> model, Cmd.none
                 // TODO remove hardcoding of scenarios -> custom functions
                 else if typeof<Scenarios.WoodRingScenario> = nodeType 
@@ -395,11 +405,11 @@ module App =
                                 |> Result.lift (fun n -> n :?> Scenarios.WoodRingScenario)
                                 |> Result.bind(fun vm -> 
                                     Scenarios.Automators.automateTreeRing vm source.SelectedSource g)
-                                |> Result.lift (fun g -> { model with Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
-                                |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
-                            | None -> { model with Error = Some "You haven't entered any data yet" }, Cmd.none
-                        | None -> { model with Error = Some "No source selected" }, Cmd.none
-                    | None -> { model with Error = Some "No graph loaded" }, Cmd.none
+                                |> Result.lift (fun g -> { model with Message = Some (SuccessMessage, "Successfully saved tree-ring scenario information"); Graph = Some g; NodeCreationViewModels = (if model.LeaveFieldsFilled then model.NodeCreationViewModels else model.NodeCreationViewModels |> Map.remove nodeType.Name); NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                |> Result.lower (fun r -> r) (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
+                            | None -> { model with Message = Some (ErrorMessage, "You haven't entered any data yet") }, Cmd.none
+                        | None -> { model with Message = Some (ErrorMessage, "No source selected") }, Cmd.none
+                    | None -> { model with Message = Some (ErrorMessage, "No graph loaded") }, Cmd.none
                 else if typeof<Scenarios.SiteOnlyScenario> = nodeType 
                 then 
                     match model.Graph with
@@ -412,11 +422,11 @@ module App =
                                 |> Result.lift (fun n -> n :?> Scenarios.SiteOnlyScenario)
                                 |> Result.bind(fun vm -> 
                                     Scenarios.Automators.automateSimpleSite vm source.SelectedSource g)
-                                |> Result.lift (fun g -> { model with Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
-                                |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
-                            | None -> { model with Error = Some "You haven't entered any data yet" }, Cmd.none
-                        | None -> { model with Error = Some "No source selected" }, Cmd.none
-                    | None -> { model with Error = Some "No graph loaded" }, Cmd.none
+                                |> Result.lift (fun g -> { model with Message = Some (SuccessMessage, "Successfully saved timeline information"); Graph = Some g; NodeCreationViewModels = (if model.LeaveFieldsFilled then model.NodeCreationViewModels else model.NodeCreationViewModels |> Map.remove nodeType.Name); NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
+                                |> Result.lower (fun r -> r) (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
+                            | None -> { model with Message = Some (ErrorMessage, "You haven't entered any data yet") }, Cmd.none
+                        | None -> { model with Message = Some (ErrorMessage, "No source selected") }, Cmd.none
+                    | None -> { model with Message = Some (ErrorMessage, "No graph loaded") }, Cmd.none
                 else
                     match model.NodeCreationViewModels |> Map.tryFind nodeType.Name with
                     | Some (formData: NodeViewModel) -> 
@@ -424,7 +434,7 @@ module App =
                             try Create.createFromViewModel nodeType formData with
                             | exn -> Error <| sprintf "Internal error when making a node: %s %s" exn.Message exn.StackTrace
                         match node with
-                        | Error e -> { model with Error = Some e }, Cmd.none
+                        | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
                         | Ok n -> 
                             match model.Graph with
                             | Some g ->
@@ -461,13 +471,13 @@ module App =
                                             | ThisIsSink (sourceKey, proposed) -> Storage.addRelationByKey fbg sourceKey ((addedNodes.Head |> fst |> fst)) proposed
                                             | ThisIsSource (sinkKey, proposed) -> Storage.addRelationByKey fbg ((addedNodes.Head |> fst |> fst)) sinkKey proposed
                                         )) (Ok graph) proposedRels)
-                                |> Result.lift (fun g -> { model with Graph = Some g; NodeCreationViewModels =  model.NodeCreationViewModels |> Map.remove nodeType.Name; NodeCreationRelations = model.NodeCreationRelations |> Map.remove nodeType.Name })
+                                |> Result.lift (fun g -> { model with Graph = Some g; Message = (if model.LeaveFieldsFilled then Some (SuccessMessage, "Successfully added node information") else None); NodeCreationViewModels = (if model.LeaveFieldsFilled then model.NodeCreationViewModels else model.NodeCreationViewModels |> Map.remove nodeType.Name); NodeCreationRelations = (if model.LeaveFieldsFilled then model.NodeCreationRelations else model.NodeCreationRelations |> Map.remove nodeType.Name) })
                                 |> Result.lower (fun m -> 
                                     match model.SelectedSource with
                                     | Some s -> m, Cmd.ofMsg (SelectSource (s.SelectedSource |> fst |> fst))
-                                    | None -> m, Cmd.none) (fun e -> { model with Error = Some e }, Cmd.none)
-                            | None -> { model with Error = Some "Cannot make node as graph is not loaded." }, Cmd.none
-                    | None -> { model with Error = Some (sprintf "Could not find type of %s" nodeType.Name) }, Cmd.none
+                                    | None -> m, Cmd.none) (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
+                            | None -> { model with Message = Some (ErrorMessage, "Cannot make node as graph is not loaded.") }, Cmd.none
+                    | None -> { model with Message = Some (ErrorMessage, sprintf "Could not find type of %s" nodeType.Name) }, Cmd.none
             | EnterNodeRelationData(nodeType, toggleset, proposed, name, sinkKeys) -> 
                 let x, y =
                     match model.NodeCreationRelations |> Map.tryFind nodeType with
@@ -501,13 +511,13 @@ module App =
                 let run = TaxonomicBackbone.GlobalPollenProject.lookupAsNodesAndRelations model.TaxonLookup.Rank model.TaxonLookup.Family model.TaxonLookup.Genus model.TaxonLookup.Species model.TaxonLookup.Authorship
                 match run with
                 | Ok t -> { model with TaxonLookup = { model.TaxonLookup with Result = Some t } }, Cmd.none
-                | Error e -> { model with Error = Some e }, Cmd.none
+                | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
             | SaveTaxonResult ->
                 match model.TaxonLookup.Result with
-                | None -> { model with Error = Some "Cannot save taxon, as none was found" }, Cmd.none
+                | None -> { model with Message = Some (ErrorMessage, "Cannot save taxon, as none was found") }, Cmd.none
                 | Some (taxon, relations) ->
                     match model.Graph with
-                    | None -> { model with Error = Some "Cannot save taxon, as graph is not loaded" }, Cmd.none
+                    | None -> { model with Message = Some (ErrorMessage, "Cannot save taxon, as graph is not loaded") }, Cmd.none
                     | Some g ->
                         let add () =
                             result {
@@ -543,12 +553,12 @@ module App =
                             }
                         match add () with
                         | Ok g -> { model with Graph = Some g; TaxonLookup = { Result = None; Rank = "Family"; Family = ""; Genus = ""; Species = ""; Authorship = "" }}, Cmd.none
-                        | Error e -> { model with Error = Some e }, Cmd.none
+                        | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
         
         // --- Start batch mode messages ---
         | UseBatchModeForProxiedTaxon (timeline, mode) ->
             match model.SelectedSource with
-            | None -> { model with Error = Some "Source was not selected." }, Cmd.none
+            | None -> { model with Message = Some (ErrorMessage, "Source was not selected.") }, Cmd.none
             | Some source ->
                 match mode with
                 | true -> { model with SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { Group = Population.BioticProxies.Pollen; Outcome = None; InferenceMethod = None; UsePlaceholderInfer = false; UsePlaceholderTaxon = false; LinkedTaxa = Map.empty; UnlinkedTaxa = Map.empty } } }, Cmd.none
@@ -593,8 +603,8 @@ module App =
                                 state |> Result.bind(fun g -> commitProxiedTaxon proxyId inferId taxaIds measureId timeline g)) (Ok g) batch.LinkedTaxa
                         match updatedGraph with
                         | Ok saved -> { model with Graph = Some saved; SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.remove timeline } }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst))
-                        | Error e -> { model with Error = Some e }, Cmd.none
-                    | None -> { model with Error = Some "Graph is not loaded." }, Cmd.none
+                        | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
+                    | None -> { model with Message = Some (ErrorMessage, "Graph is not loaded.") }, Cmd.none
                 else if batch.UnlinkedTaxa.Count > 0 then
                     match model.Graph with
                     | Some g ->
@@ -634,16 +644,16 @@ module App =
                                     | Ok r -> r
                                     | Error e -> (linked, unlinked, e :: errors)
                                 ) (batch.LinkedTaxa, batch.UnlinkedTaxa, []) batch.UnlinkedTaxa
-                        let isError = if errors.Length = 0 then None else Some (String.concat ", and " errors)
-                        { model with Error = isError; SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { batch with LinkedTaxa = newLinked; UnlinkedTaxa = newUnlinked } } }, Cmd.none
+                        let isError = if errors.Length = 0 then None else Some (ErrorMessage, String.concat ", and " errors)
+                        { model with Message = isError; SelectedSource = Some { source with AddBioticHyperedgeBatch = source.AddBioticHyperedgeBatch |> Map.add timeline { batch with LinkedTaxa = newLinked; UnlinkedTaxa = newUnlinked } } }, Cmd.none
                     | None -> model, Cmd.none
-                else { model with Error = Some "Cannot validate or confirm taxa when none are specified" }, Cmd.none
+                else { model with Message = Some (ErrorMessage, "Cannot validate or confirm taxa when none are specified") }, Cmd.none
             )
         // --- End batch mode messages ---
 
         | ChangeProxiedTaxonVm(timeline, proxy, inference, taxon, measure) -> 
             match model.SelectedSource with
-            | None -> { model with Error = Some "Source was not selected." }, Cmd.none
+            | None -> { model with Message = Some (ErrorMessage, "Source was not selected.") }, Cmd.none
             | Some source ->
                 { model with SelectedSource = Some { source with AddBioticHyperedge = source.AddBioticHyperedge |> Map.add timeline (proxy, inference, taxon, measure) } }, Cmd.none
         | SubmitProxiedTaxon timelineId -> 
@@ -655,10 +665,10 @@ module App =
                     | Some (proxyId, inferId, taxaIds, measureId) ->
                         match commitProxiedTaxon proxyId.Value inferId.Value taxaIds.Value measureId.Value timelineId g with
                         | Ok saved -> { model with Graph = Some saved }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst))
-                        | Error e -> { model with Error = Some e }, Cmd.none
-                    | None -> { model with Error = Some "No hyper edge details found" }, Cmd.none
-                | None -> { model with Error = Some "No source loaded" }, Cmd.none
-            | None -> { model with Error = Some "No graph loaded" }, Cmd.none
+                        | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
+                    | None -> { model with Message = Some (ErrorMessage, "No hyper edge details found") }, Cmd.none
+                | None -> { model with Message = Some (ErrorMessage, "No source loaded") }, Cmd.none
+            | None -> { model with Message = Some (ErrorMessage, "No graph loaded") }, Cmd.none
         | ToggleConnectNewOrExistingSource ->
             match model.SelectedSource with
             | Some s -> { model with SelectedSource = Some { s with AddingNewSource = not s.AddingNewSource } }, Cmd.none
@@ -707,8 +717,8 @@ module App =
                     |> Result.lift GraphStructure.Node.SourceNode
                     |> Result.bind (fun n -> Storage.updateNode g (source.SelectedSource |> fst |> fst, n))
                     |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
-                    |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
-                | None -> { model with Error = Some "Cannot modify source as graph is not loaded." }, Cmd.none
+                    |> Result.lower (fun r -> r) (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
+                | None -> { model with Message = Some (ErrorMessage, "Cannot modify source as graph is not loaded.") }, Cmd.none
             | None -> model, Cmd.none
         | ChangeCodingProblem(section, reason) ->
             match model.SelectedSource with
@@ -739,8 +749,8 @@ module App =
                     |> Result.lift GraphStructure.Node.SourceNode
                     |> Result.bind (fun n -> Storage.updateNode g (source.SelectedSource |> fst |> fst, n))
                     |> Result.lift (fun g -> { model with Graph = Some g }, Cmd.ofMsg (SelectSource (source.SelectedSource |> fst |> fst)))
-                    |> Result.lower (fun r -> r) (fun e -> { model with Error = Some e }, Cmd.none)
-                | None -> { model with Error = Some "Cannot modify source as graph is not loaded." }, Cmd.none
+                    |> Result.lower (fun r -> r) (fun e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none)
+                | None -> { model with Message = Some (ErrorMessage, "Cannot modify source as graph is not loaded.") }, Cmd.none
             | None -> model, Cmd.none
         | ChangeProposedSourceDatabaseLink p -> 
             match model.SelectedSource with
@@ -762,11 +772,18 @@ module App =
             ]
         ]
 
-    let errorAlert model dispatch =
-        cond model.Error <| function
-        | Some e -> div [ _class "alert alert-danger" ] [ 
-                text e
-                button [ _class "btn"; on.click (fun _ -> DismissError |> dispatch) ] [ text "Dismiss" ] ]
+    let alert' name msg dispatch =
+        div [ _class <| sprintf "alert alert-%s" name ] [ 
+            text msg
+            button [ _class "btn"; on.click (fun _ -> DismissMessage |> dispatch) ] [ text "Dismiss" ] ]
+
+    let alert model dispatch =
+        cond model.Message <| function
+        | Some msg ->
+            cond (fst msg) <| function
+            | ErrorMessage -> alert' "danger" (snd msg) dispatch
+            | SuccessMessage -> alert' "success" (snd msg) dispatch
+            | InfoMessage -> alert' "info" (snd msg) dispatch
         | None -> empty
 
     let timelineAtomDetailsView timelineAtom g =
@@ -908,7 +925,7 @@ module App =
         concat [
             h2 [] [ textf "Scenario: %s" title ]
             p [] [ text description ]
-            errorAlert model dispatch
+            alert model dispatch
             cond model.SelectedSource <| function
             | None -> p [] [ text "Select a source in the 'extract' view to use the scenario." ]
             | Some s -> 
@@ -929,6 +946,7 @@ module App =
                                         p [] [ text formDescription ]
                                         extraElements
                                         Scenarios.scenarioGen<'a> (model.NodeCreationViewModels |> Map.tryFind (typeof<'a>).Name) (FormMessage >> dispatch)
+                                        textf "%A" ((model.NodeCreationViewModels |> Map.tryFind (typeof<'a>).Name))
                                     ]
                                 ]
                             ]
@@ -949,11 +967,29 @@ module App =
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Statistics; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry ] dispatch
+                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry; Page.Statistics; Page.Settings ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
                     cond model.Page <| function
+                        | Page.Settings -> concat [
+                                h2 [] [ text "Settings" ]
+                                p [] [ text "Here you can change the interface's behaviour and reload the database." ]
+                                div [ _class "row mb-3" ] [
+                                    label [ attr.``for`` "toggle-keep-values"; _class "col-sm-2 col-form-label" ] [ text "Keep field values after successful data entry" ]
+                                    div [ _class "col-sm-10" ] [
+                                        input [ attr.``type`` "checkbox"; bind.``checked`` model.LeaveFieldsFilled (fun _ -> ToggleLeaveFilled |> dispatch) ]
+                                        small [ _class "form-text" ] [ text "If you are entering repetitive information, you may toggle this option on to temporarily keep values filled when a node is successfully created." ]
+                                    ]
+                                ]
+                                div [ _class "card mb-4" ] [
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Reload database" ]
+                                    div [ _class "card-body" ] [
+                                        p [] [ text "By selecting reload below, the application will be reset. All form fields will be emptied and the database reloaded." ]
+                                        button [ _class "btn btn-danger"; on.click(fun _ -> ResetApplication |> dispatch) ] [ text "Reload Database" ]
+                                    ]
+                                ]
+                            ]
                         | Page.Scenario scenario ->
                             cond scenario <| function
                             | SimpleEntry ->
@@ -977,7 +1013,7 @@ module App =
                                 p [] [ 
                                     text "Use the forms on this page to add new options for taxonomic nodes."
                                     text "Plant taxa are created by validating names against a taxonomic backbone." ]
-                                errorAlert model dispatch
+                                alert model dispatch
 
                                 // Allow linking to taxonomic backbone here.
                                 div [ _class "card mb-4" ] [
@@ -1064,7 +1100,7 @@ module App =
                         | Page.Exposure -> div [] [
                                 h2 [] [ text "Exposure" ]
                                 p [] [ text "The timeline information is pre-configured within the graph node structure. However, you may add qualitative time labels that represent certain periods in time." ]
-                                errorAlert model dispatch
+                                alert model dispatch
                                 div [ _class "card mb-4" ] [
                                     div [ _class "card-header text-bg-secondary" ] [ text "Add a qualitative time label" ]
                                     div [ _class "card-body" ] [
@@ -1090,7 +1126,7 @@ module App =
                                 h2 [] [ text "Statistics" ]
                                 hr []
                                 p [] [ text "Contains various statistics about the compiled graph database." ]
-                                errorAlert model dispatch
+                                alert model dispatch
                                 cond model.Statistics <| function
                                 | Some stats ->
                                     div [ _class "card mb-4" ] [
@@ -1120,7 +1156,7 @@ module App =
                                 h2 [] [ text "Sources Manager" ]
                                 hr []
                                 p [] [ text "Sources may be imported in bulk from Colandr screening, or added individually." ]
-                                errorAlert model dispatch
+                                alert model dispatch
                                 h3 [] [ text "Add an individual source - manually" ]
                                 hr []
                                 div [ _class "card mb-4" ] [
@@ -1172,7 +1208,7 @@ module App =
 
                             cond model.Graph <| function
                             | None -> concat [
-                                errorAlert model dispatch
+                                alert model dispatch
                                 // No graph is loaded. Connect to a graph folder.
                                 p [] [ text "To get started, please connect the data coding tool to the folder where you are storing the graph database files." ]
                                 label [] [ text "Where is the graph database stored? Enter the folder location here:" ]
@@ -1211,7 +1247,7 @@ module App =
                                     ]
                                 ]
 
-                                errorAlert model dispatch
+                                alert model dispatch
 
                                 cond model.SelectedSource <| function
                                 | None -> div [ _class "alert alert-info" ] [ text "Select a source to continue" ]
