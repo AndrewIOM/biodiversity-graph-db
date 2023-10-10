@@ -313,6 +313,12 @@ module FieldDataTypes =
             | DepthRange of topDepth:Depth * bottomDepth:Depth
             | DepthRangeNotStated
 
+        let unwrapDepth (Depth d) = d
+
+        type Depth with
+            member this.Value = unwrapDepth this
+
+
     [<RequireQualifiedAccess>]
     module OldDate =
 
