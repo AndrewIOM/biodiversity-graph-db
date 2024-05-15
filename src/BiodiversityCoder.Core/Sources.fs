@@ -109,10 +109,11 @@ module Sources =
         type DarkData = {
             Investigator: Author.Author
             AdditionalInvestigators: Author.Author list
-            License: License
+            CompilationYear: int option
             Title: Text.ShortText option
-            Context: Geography.SamplingLocation option
             Details: Text.Text
+            Context: Geography.SamplingLocation option
+            License: License
         }
 
         type GreySourceObsolete = {
@@ -181,6 +182,7 @@ module Sources =
         | UsesPrimarySource
         | UsedDatabase of accessDate:System.DateOnly option * subset:DatabaseSubset
         | HasDataset
+        | IsChapterIn
 
     and DatabaseSubset =
         | AllRecordsInStudyScope
