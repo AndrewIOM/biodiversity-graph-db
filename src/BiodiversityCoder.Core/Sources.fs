@@ -11,13 +11,17 @@ module Sources =
         type JournalArticle = {
             FirstAuthor: Author.Author
             AdditionalAuthors: Author.Author list
-            Title: Text.Text option
-            Journal: Text.ShortText option
-            Year: int option
+            Title: Text.Text
+            Journal: Text.ShortText
+            Year: int
             Volume: int option
             Number: int option
+            [<Name "Page Range">]
+            [<Help "If known, the page range in the format X - Y e.g. 20 - 24">]
             PageRange: IntRange.IntRange option
             Month: Month option
+            [<Name "DOI (Digital Object Identifier)">]
+            [<Help "If this article has a DOI, you can specify it either without or with the full URL (e.g. 10.1080/10509585.2015.1092083 or https://doi.org/10.1080/10509585.2015.1092083).">]
             DOI: DigitalObjectIdentifier.DigitalObjectIdentifier option
         }
 
@@ -42,6 +46,8 @@ module Sources =
             BookTitle: Text.Text
             BookSubtitle: Text.Text option
             BookFirstAuthor: Author.Author
+            [<Name "More authors">]
+            [<Help "Add each non-first author in the order that they appear in the author list.">]
             BookAdditionalAuthors: Author.Author list
             BookCopyrightYear: int
             Editor: Author.Author option
@@ -54,12 +60,15 @@ module Sources =
             ChapterFirstAuthor: Author.Author
             ChapterAdditionalAuthors: Author.Author list
             ChapterTitle: Text.Text
+            [<Name "Number of chapter's first page">]
             FirstPage: int
         }
 
         type Database = {
+            [<Help "A short identifier - often the one commonly used in literature. For example, EPD (for the European Pollen Database).">]
             Abbreviation: Text.ShortText
             FullName: Text.Text
+            [<Help "The full web URL of the online database.">]
             Location: System.Uri
         }
 
@@ -78,21 +87,34 @@ module Sources =
             | Other of Text.ShortText
 
         type GreySource = {
+            [<Help "Select an appropriate type of grey literature. If a suitable entry doesn't exist, enter a new one in Other.">]
             Format: GreyFormat
+            [<Help "Enter the authors of this source in the order they appear in the author list.">]
             Contributors: Author.Author list
             Title: Text.Text
+            [<Help "The institution that either sponsored the work or where the majority of the work was undertaken.">]
             Institution: Text.ShortText option
             License: License
+            [<Name "Year Posted">]
+            [<Help "The year in which this source was first released.">]
             PostedYear: int option
+            [<Name "DOI (Digital Object Identifier)">]
+            [<Help "If this article has a DOI, you can specify it either without or with the full URL (e.g. 10.1080/10509585.2015.1092083 or https://doi.org/10.1080/10509585.2015.1092083).">]
             DOI: DigitalObjectIdentifier.DigitalObjectIdentifier option
+            [<Help "Briefly describe the contents of the grey literature source that may be of relevance to our project.">]
             Description: Text.Text option
         }
 
         type IndividualPublishedDataset = {
+            [<Help "Enter the authors of this source in the order they appear in the author list.">]
             Contributors: Author.Author list
             Title: Text.Text
+            [<Help "The year in which this dataset was published to a data repository. Note: If the source was placed in a database, use the database entry source type instead.">]
             YearPublished: int option
+            [<Help "The institution that either sponsored the work or where the majority of the work was undertaken.">]
             Institution: Text.ShortText option
+            [<Name "DOI (Digital Object Identifier)">]
+            [<Help "This dataset likely has a DOI. If so, you can specify it either without or with the full URL (e.g. 10.1080/10509585.2015.1092083 or https://doi.org/10.1080/10509585.2015.1092083).">]
             DOI: DigitalObjectIdentifier.DigitalObjectIdentifier option
             License: License
         }
@@ -101,17 +123,25 @@ module Sources =
             Author: Author.Author
             Title: Text.Text
             Institution: Text.ShortText
+            [<Name "Institutional Document ID">]
+            [<Help "An internal reference specific to the University, which may be a library index number for example.">]
             InstitutionDocumentID: Text.ShortText option
             CompletionYear: int
+            [<Name "DOI (Digital Object Identifier)">]
+            [<Help "You can specify a DOI either without or with the full URL (e.g. 10.1080/10509585.2015.1092083 or https://doi.org/10.1080/10509585.2015.1092083).">]
             DOI: DigitalObjectIdentifier.DigitalObjectIdentifier option
         }
 
         type DarkData = {
             Investigator: Author.Author
             AdditionalInvestigators: Author.Author list
+            [<Name "Year of Compilation">]
+            [<Help "The year - if known - in which the dataset was made.">]
             CompilationYear: int option
             Title: Text.ShortText option
             Details: Text.Text
+            [<Name "Spatial Context">]
+            [<Help "If the data has a specific spatial context, you may specify it here. For example: X Lake, Pyramid Hills, ON, Canada">]
             Context: Geography.SamplingLocation option
             License: License
         }

@@ -319,10 +319,10 @@ module GraphStructure =
                                 (if d.YearPublished.IsSome then d.YearPublished.Value.ToString() else "Unknown year")
                                 d.Title.Value
                         | JournalArticle n ->
-                            sprintf "%s (%s). %s" 
+                            sprintf "%s (%i). %s" 
                                 n.FirstAuthor.Display
-                                (if n.Year.IsSome then n.Year.Value.ToString() else "Unknown year")
-                                (if n.Title.IsSome then n.Title.Value.Value else "Unknown title")
+                                n.Year
+                                n.Title.Value
                     | GreyLiteratureSource n ->
                         sprintf "%s (%s). [grey|%s] %s%s"
                             (FieldDataTypes.Author.authorList n.Contributors)
@@ -472,10 +472,8 @@ module GraphStructure =
                         String.concat "_" [
                             "pub"
                             n.FirstAuthor.Value.LastName
-                            (if n.Title.IsSome then 
-                                (n.Title.Value.Value.Split(" ") |> takeAlphaNumFirstChars)
-                                else "notitle")
-                            (if n.Year.IsSome then string n.Year.Value else "noyear") ] |> toLower |> friendlyKey
+                            (n.Title.Value.Split(" ") |> takeAlphaNumFirstChars)
+                            string n.Year ] |> toLower |> friendlyKey
                 | GreyLiteratureSource n ->
                     sprintf "greylit_%s_%s_%s_%s_%s_%s"
                         (n.Format.ToString() |> toLower |> safeString)

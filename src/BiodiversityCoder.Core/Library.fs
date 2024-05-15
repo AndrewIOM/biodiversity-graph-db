@@ -928,7 +928,7 @@ module App =
             | Sources.BookChapter c -> Some c.ChapterTitle
             | Sources.Dissertation c -> Some c.Title
             | Sources.IndividualDataset d -> Some d.Title
-            | Sources.JournalArticle d -> d.Title
+            | Sources.JournalArticle d -> Some d.Title
 
     let scenarioView<'a> title description formTitle formDescription extraElements (model:Model) dispatch =
         concat [
