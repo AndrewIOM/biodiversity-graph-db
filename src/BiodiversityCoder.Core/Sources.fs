@@ -6,56 +6,146 @@ open FieldDataTypes
 /// other data sources.
 module Sources =
 
-    type ArticleMetadataNode = {
-        Author: Text.Text option
-        Title: Text.Text option
-        Journal: Text.ShortText option
-        Year: int option
-        Volume: int option
-        Number: int option
-        Pages: (int * int) option
-        Month: string option
-        DataAvailability: DataAvailability
-    }
+    module RecordTypes =
 
-    and DataAvailability =
-        | AtDoiClosed of System.Uri
-        | AtDoiOpen of System.Uri
-        | NotAttachedToSource
+        type JournalArticle = {
+            FirstAuthor: Author.Author
+            AdditionalAuthors: Author.Author list
+            Title: Text.Text option
+            Journal: Text.ShortText option
+            Year: int option
+            Volume: int option
+            Number: int option
+            PageRange: IntRange.IntRange option
+            Month: Month option
+            DOI: DigitalObjectIdentifier.DigitalObjectIdentifier option
+        }
 
-    type GreySourceNode = {
-        Contact: Person
-        License: License
-        Title: Text.Text
-    }
+        type JournalArticleObsolete = {
+            Author: Text.Text option
+            Title: Text.Text option
+            Journal: Text.ShortText option
+            Year: int option
+            Volume: int option
+            Number: int option
+            Pages: (int * int) option
+            Month: string option
+            DataAvailability: DataAvailabilityUnverified
+        }
 
-    type DarkDataNode = {
-        Contact: Person
-        License: License
-        Details: Text.Text
-    }
+        and DataAvailabilityUnverified =
+            | AtDoiClosed of System.Uri
+            | AtDoiOpen of System.Uri
+            | NotAttachedToSource
 
-    type DatabaseNode = {
-        Abbreviation: Text.ShortText
-        FullName: Text.Text
-        Location: System.Uri
-    }
+        type Book = {
+            BookTitle: Text.Text
+            BookSubtitle: Text.Text option
+            BookFirstAuthor: Author.Author
+            BookAdditionalAuthors: Author.Author list
+            BookCopyrightYear: int
+            Editor: Author.Author option
+            ISBN: Text.Text option
+            ISSNDOI: Text.Text option
+            Publisher: Text.Text option
+        }
 
-    and DatabaseDatasetNode = {
-        DatabaseAbbreviation: Text.ShortText
-        UniqueIdentifierInDatabase: Text.ShortText
-        Investigators: Person list
-        Title: Text.ShortText option
-        WebLocation: System.Uri option
-    }
+        type BookChapter = {
+            ChapterFirstAuthor: Author.Author
+            ChapterAdditionalAuthors: Author.Author list
+            ChapterTitle: Text.Text
+            FirstPage: int
+        }
+
+        type Database = {
+            Abbreviation: Text.ShortText
+            FullName: Text.Text
+            Location: System.Uri
+        }
+
+        and DatabaseDataset = {
+            DatabaseAbbreviation: Text.ShortText
+            UniqueIdentifierInDatabase: Text.ShortText
+            Investigators: Person list
+            Title: Text.ShortText option
+            WebLocation: System.Uri option
+        }
+
+        type GreyFormat =
+            | Blog | ConferencePaper | ConferenceProceeding | Dataset | GovernmentDocument
+            | GovernmentReport | Newsletter | Pamphet | PolicyStatement | Preprint
+            | PressRelease | ResearchReport | StatisticalReport | WorkingPaper
+            | Other of Text.ShortText
+
+        type GreySource = {
+            Format: GreyFormat
+            Contributors: Author.Author list
+            Title: Text.Text
+            Institution: Text.ShortText option
+            License: License
+            PostedYear: int option
+            DOI: DigitalObjectIdentifier.DigitalObjectIdentifier option
+            Description: Text.Text option
+        }
+
+        type IndividualPublishedDataset = {
+            Contributors: Author.Author list
+            Title: Text.Text
+            YearPublished: int option
+            Institution: Text.ShortText option
+            DOI: DigitalObjectIdentifier.DigitalObjectIdentifier option
+            License: License
+        }
+
+        type Dissertation = {
+            Author: Author.Author
+            Title: Text.Text
+            Institution: Text.ShortText
+            InstitutionDocumentID: Text.ShortText option
+            CompletionYear: int
+            DOI: DigitalObjectIdentifier.DigitalObjectIdentifier option
+        }
+
+        type DarkData = {
+            Investigator: Author.Author
+            AdditionalInvestigators: Author.Author list
+            License: License
+            Title: Text.ShortText option
+            Context: Geography.SamplingLocation option
+            Details: Text.Text
+        }
+
+        type GreySourceObsolete = {
+            Contact: Person
+            License: License
+            Title: Text.Text
+        }
+
+        type DarkDataObsolete = {
+            Contact: Person
+            License: License
+            Details: Text.Text
+        }
+
+
+    type PublishedSource =
+        | Book of RecordTypes.Book
+        | BookChapter of RecordTypes.BookChapter
+        | IndividualDataset of RecordTypes.IndividualPublishedDataset
+        | Dissertation of RecordTypes.Dissertation
+        | JournalArticle of RecordTypes.JournalArticle
 
     /// A graph database node representing a source of information.
     type Source =
-        | Bibliographic of ArticleMetadataNode
-        | GreyLiterature of GreySourceNode
-        | DarkData of DarkDataNode
-        | Database of DatabaseNode
-        | DatabaseEntry of DatabaseDatasetNode
+        | PublishedSource of PublishedSource
+        | GreyLiteratureSource of RecordTypes.GreySource
+        | DarkDataSource of RecordTypes.DarkData
+        | Database of RecordTypes.Database
+        | DatabaseEntry of RecordTypes.DatabaseDataset
+        // Obsolete:
+        | Bibliographic of RecordTypes.JournalArticleObsolete
+        | GreyLiterature of RecordTypes.GreySourceObsolete
+        | DarkData of RecordTypes.DarkDataObsolete
 
     type SourceNode =
         | Included of Source * CodingProgress
@@ -121,7 +211,7 @@ module BibtexParser =
                     Number = Some <| int m.Groups.[7].Value
                     Pages = Some (int m.Groups.[8].Value, int m.Groups.[9].Value)
                     Month = Some <| m.Groups.[10].Value
-                    DataAvailability = NotAttachedToSource
+                    DataAvailability = RecordTypes.NotAttachedToSource
                 }) |> Seq.toList |> Ok
         else Error "No sources identified"
 
@@ -153,6 +243,6 @@ module ColandrParser =
                     Number = None
                     Pages = None
                     Month = None
-                    DataAvailability = NotAttachedToSource
+                    DataAvailability = RecordTypes.NotAttachedToSource
                 }) |> Ok
         else Error "Colandr file does not exist"

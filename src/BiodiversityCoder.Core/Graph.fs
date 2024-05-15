@@ -300,6 +300,41 @@ module GraphStructure =
                     | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
                     | Database n -> sprintf "Database: %s" n.FullName.Value
                     | DatabaseEntry n -> sprintf "Database: %s - entry %s" n.DatabaseAbbreviation.Value n.UniqueIdentifierInDatabase.Value
+                    | PublishedSource p ->
+                        match p with
+                        | Book b ->
+                            sprintf "%s (%i). [book] %s. %s"
+                                (FieldDataTypes.Author.authorList (List.concat [ [ b.BookFirstAuthor]; b.BookAdditionalAuthors ] ))
+                                b.BookCopyrightYear b.BookTitle.Value
+                                    (if b.ISBN.IsSome then b.ISBN.Value.Value + " (ISBN)"
+                                        else if b.ISSNDOI.IsSome then b.ISSNDOI.Value.Value + " (ISSN/DOI)" else "")
+                        | BookChapter n ->
+                            sprintf "%s. [book chapter] %s"
+                                (FieldDataTypes.Author.authorList (List.concat [ [ n.ChapterFirstAuthor]; n.ChapterAdditionalAuthors ] ))
+                                n.ChapterTitle.Value
+                        | Dissertation n ->
+                            sprintf "%s (%i). [dissertation] %s" n.Author.Display n.CompletionYear n.Title.Value
+                        | IndividualDataset d ->
+                            sprintf "%s (%s). [dataset] %s." (FieldDataTypes.Author.authorList d.Contributors)
+                                (if d.YearPublished.IsSome then d.YearPublished.Value.ToString() else "Unknown year")
+                                d.Title.Value
+                        | JournalArticle n ->
+                            sprintf "%s (%s). %s" 
+                                n.FirstAuthor.Display
+                                (if n.Year.IsSome then n.Year.Value.ToString() else "Unknown year")
+                                (if n.Title.IsSome then n.Title.Value.Value else "Unknown title")
+                    | GreyLiteratureSource n ->
+                        sprintf "%s (%s). [grey|%s] %s%s"
+                            (FieldDataTypes.Author.authorList n.Contributors)
+                            (if n.PostedYear.IsSome then n.PostedYear.Value.ToString() else "Unknown year")
+                            (n.Format.ToString())
+                            n.Title.Value
+                            (if n.Institution.IsSome then ". " + n.Institution.Value.Value else "")
+                    | DarkDataSource n ->
+                        sprintf "%s unpublished. [dataset] %s%s"
+                            (FieldDataTypes.Author.authorList (List.concat [ [ n.Investigator]; n.AdditionalInvestigators ]))
+                            (if n.Title.IsSome then n.Title.Value.Value + ". " else "")
+                            (n.Details.Value |> Seq.truncate 50 |> Seq.map string |> String.concat "")
             | ExposureNode e ->
                 match e with
                 | YearNode y -> sprintf "%i cal yr BP" y.Year
@@ -397,6 +432,9 @@ module GraphStructure =
                 | DarkData n -> sprintf "darkdata_%s_%s_%s" (safeString n.Contact.LastName.Value) (safeString n.Contact.FirstName.Value) ((n.Details.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> Seq.truncate 40 |> String.concat "")) |> toLower |> friendlyKey
                 | Database n -> sprintf "database_%s" (safeString n.Abbreviation.Value) |> toLower |> friendlyKey
                 | DatabaseEntry n -> sprintf "database_%s_entry_%s" (safeString n.DatabaseAbbreviation.Value) (safeString n.UniqueIdentifierInDatabase.Value) |> toLower |> friendlyKey
+                | PublishedSource(_) -> failwith "Not Implemented"
+                | GreyLiteratureSource(_) -> failwith "Not Implemented"
+                | DarkDataSource(_) -> failwith "Not Implemented"
         | ExposureNode e ->
             match e with
             | YearNode y -> sprintf "%iybp" y.Year |> toLower |> friendlyKey
@@ -462,9 +500,7 @@ module GraphStructure =
                 match t with
                 // Source nodes:
                 | (t: System.Type) when t = typeof<Sources.SourceNode> -> n :?> Sources.SourceNode |> SourceNode |> Ok
-                | (t: System.Type) when t = typeof<Sources.ArticleMetadataNode> -> n :?> Sources.ArticleMetadataNode |> Bibliographic |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
-                | (t: System.Type) when t = typeof<Sources.DarkDataNode> -> n :?> Sources.DarkDataNode |> DarkData |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
-                | (t: System.Type) when t = typeof<Sources.GreySourceNode> -> n :?> Sources.GreySourceNode |> GreyLiterature |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
+                | (t: System.Type) when t = typeof<Sources.Source> -> n :?> Sources.Source |> Unscreened |> SourceNode |> Ok
                 // Population nodes:
                 | (t: System.Type) when t = typeof<BioticProxies.BioticProxyNode> -> n :?> BioticProxies.BioticProxyNode |> BioticProxyNode |> PopulationNode |> Ok
                 | (t: System.Type) when t = typeof<BioticProxies.BioticProxyCategoryNode> -> n :?> BioticProxies.BioticProxyCategoryNode |> BioticProxyCategoryNode |> PopulationNode |> Ok

@@ -920,6 +920,15 @@ module App =
         | Sources.Source.Database d -> Some d.FullName
         | Sources.Source.DatabaseEntry _ -> None
         | Sources.Source.GreyLiterature g -> Some g.Title
+        | Sources.Source.GreyLiteratureSource g -> Some g.Title
+        | Sources.Source.DarkDataSource d -> Some d.Details
+        | Sources.Source.PublishedSource s ->
+            match s with
+            | Sources.Book b -> Some b.BookTitle
+            | Sources.BookChapter c -> Some c.ChapterTitle
+            | Sources.Dissertation c -> Some c.Title
+            | Sources.IndividualDataset d -> Some d.Title
+            | Sources.JournalArticle d -> d.Title
 
     let scenarioView<'a> title description formTitle formDescription extraElements (model:Model) dispatch =
         concat [
@@ -1157,33 +1166,17 @@ module App =
                                 hr []
                                 p [] [ text "Sources may be imported in bulk from Colandr screening, or added individually." ]
                                 alert model dispatch
-                                h3 [] [ text "Add an individual source - manually" ]
+                                h3 [] [ text "Manually add an individul source" ]
                                 hr []
                                 div [ _class "card mb-4" ] [
                                     div [ _class "card-header text-bg-secondary" ] [ text "Add a journal article source" ]
                                     div [ _class "card-body" ] [
-                                        p [] [ text "Manually add a record for a published journal article." ]
-                                        ViewGen.makeNodeForm<Sources.ArticleMetadataNode> (model.NodeCreationViewModels |> Map.tryFind "ArticleMetadataNode") [] (FormMessage >> dispatch)
-                                    ]
-                                ]
-                                br []
-                                div [ _class "card mb-4" ] [
-                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a 'Dark Data' source" ]
-                                    div [ _class "card-body" ] [
-                                        p [] [ text "Manually add 'dark data'. Dark data is a dataset that has not been published, nor has it been digitised into an existing database." ]
-                                        ViewGen.makeNodeForm<Sources.DarkDataNode> (model.NodeCreationViewModels |> Map.tryFind "DarkDataNode") [] (FormMessage >> dispatch)
-                                    ]
-                                ]
-                                br []
-                                div [ _class "card mb-4" ] [
-                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a 'Grey Literature' source" ]
-                                    div [ _class "card-body" ] [
-                                        p [] [ text "Manually add a 'grey literature' source. Compared to 'dark data' (above), 'grey literature' is a written source that has not been published or is otherwise not indexed in bibliographic databases. Examples some Government publications, internal reports etc." ]
-                                        ViewGen.makeNodeForm<Sources.GreySourceNode> (model.NodeCreationViewModels |> Map.tryFind "DarkDataNode") [] (FormMessage >> dispatch)
+                                        p [] [ text "Manually add a record for a published, grey literature, or 'dark data' source." ]
+                                        ViewGen.makeNodeForm<Sources.Source> (model.NodeCreationViewModels |> Map.tryFind "Source") [] (FormMessage >> dispatch)
                                     ]
                                 ]
 
-                                h3 [] [ text "Add one or many sources - from bibtex" ]
+                                h3 [] [ text "Advanced: add one or many sources - from bibtex" ]
                                 hr []
                                 p [] [ text "You may import " ]
                                 div [ _class "card mb-4" ] [
@@ -1194,7 +1187,7 @@ module App =
                                         button [ on.click (fun _ -> ImportBibtex |> dispatch ) ] [ text "Import" ]
                                     ]
                                 ]
-                                h3 [] [ text "Bulk import from Colandr" ]
+                                h3 [] [ text "Advanced: bulk import from Colandr" ]
                                 hr []
                                 p [] [ text "You can import sources from Colandr using the button below. The colandr raw output should be saved as 'colandr-titleabs-screen-results.csv' in the graph database folder." ]
                                 button [ _class "btn btn-primary"; on.click (fun _ -> ImportColandr |> dispatch) ] [ text "Import from Colandr (title-abstract screening)" ]
