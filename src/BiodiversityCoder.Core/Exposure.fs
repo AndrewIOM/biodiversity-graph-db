@@ -28,26 +28,26 @@ module Exposure =
             [<Help("Select 'No' unless (a) an age-depth model was applied AND (b) the date was provided but not used in the formation of the age-depth model (for a sediment core).")>]
             Discarded: bool
         }
-    
-        /// Defines an individual temporal extent from a study and place,
-        /// as defined within the research itself (not reinterpreted).
-        type IndividualTimelineNode =
-            | Continuous of resolution:TemporalResolution
-            | Discontinuous of resolution:TemporalResolution * hiatuses:Hiatus list
 
-        and TemporalResolution =
+        type RegularFeature =
+            | WoodAnatomicalFeatures
+            | Varves
+            | BoneOrToothGrowth
+            | OtherRegularFeature of name:Text.ShortText
+
+        type TemporalResolution =
             /// time series that have even timesteps, for example tree ring data.
             | Regular of timestep:float<OldDate.calYearBP> * feature:RegularFeature
             /// time series that have uneven timesteps, for example sedimentary data.
             | Irregular
         
-        and Hiatus = Hiatus of oldest:float<OldDate.calYearBP> * youngest:float<OldDate.calYearBP>
+        type Hiatus = Hiatus of oldest:float<OldDate.calYearBP> * youngest:float<OldDate.calYearBP>
 
-        and RegularFeature =
-            | WoodAnatomicalFeatures
-            | Varves
-            | BoneOrToothGrowth
-            | OtherRegularFeature of name:Text.ShortText
+        /// Defines an individual temporal extent from a study and place,
+        /// as defined within the research itself (not reinterpreted).
+        type IndividualTimelineNode =
+            | Continuous of resolution:TemporalResolution
+            | Discontinuous of resolution:TemporalResolution * hiatuses:Hiatus list
 
     /// The temporal index handles relations between calendar-based / qualitative-based
     /// dates in the past and occurrence data.

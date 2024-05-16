@@ -119,10 +119,17 @@ module Attributes =
 
     /// An attribute to display guidance text when specifying data for a 
     /// property or field.
+    [<AttributeUsage(AttributeTargets.Property)>]
     type HelpAttribute(text: string) =
         inherit Attribute()
         with member __.Text = text
 
+    /// An attribute to add the required units to the right side of the
+    /// input box.
+    [<AttributeUsage(AttributeTargets.Property)>]
+    type UnitAttribute(text: string) =
+        inherit Attribute()
+        with member __.Text = text
 
 // Services shared with MAUI
 type IFolderPicker =
@@ -473,7 +480,7 @@ module FieldDataTypes =
         /// a date node and the cal yr BP time series. This helps us keep track
         /// of how each temporal extent relates to the harmonised (calibrated years)
         /// master time series.
-        and OldDateSimple =
+        type OldDateSimple =
             | BP of bpDate:float<uncalYearBP>
             | CalYrBP of calibratedDate:float<calYearBP> * calibrationTechnique:Text.ShortText option
             | HistoryYearAD of calendarYear:float<AD>

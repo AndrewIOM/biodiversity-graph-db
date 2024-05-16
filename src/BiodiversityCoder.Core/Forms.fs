@@ -235,6 +235,14 @@ module ViewGen =
     let isList (t:System.Type) = t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<_ list>
 
     /// Generate help text from the `Help` attribute if specified.
+    let genUnits (field: System.Reflection.PropertyInfo) =
+        cond (field.GetCustomAttributes(typeof<UnitAttribute>, true) |> Seq.isEmpty) <| function
+        | true -> empty
+        | false ->
+            span [ _class "input-group-text" ] [
+                text (field.GetCustomAttributes(typeof<UnitAttribute>, true) |> Seq.head:?> HelpAttribute).Text ]
+
+    /// Generate help text from the `Help` attribute if specified.
     let genHelp (field: System.Reflection.PropertyInfo) =
         cond (field.GetCustomAttributes(typeof<HelpAttribute>, true) |> Seq.isEmpty) <| function
         | true -> empty
@@ -285,11 +293,17 @@ module ViewGen =
             | _ -> ""
         | None -> ""
 
-    let genStringInput existingValue maxLength dispatch =
-        input [ attr.maxlength maxLength; bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch); _class "form-control" ]
+    let genStringInput field existingValue maxLength dispatch =
+        div [ _class "input-group mb-3" ] [
+            input [ attr.maxlength maxLength; bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch); _class "form-control" ]
+            genUnits field
+        ]
 
-    let genFloatInput existingValue dispatch =
-        input [ bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch); _class "form-control" ]
+    let genFloatInput field existingValue dispatch =
+        div [ _class "input-group mb-3" ] [
+            input [ bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch); _class "form-control" ]
+            genUnits field
+        ]
 
     let genTrueFalseToggle existingValue dispatch =
         select [ _class "form-select"; bind.change.string (boolValue existingValue) (fun b -> Boolean (bool.Parse(b)) |> FieldValue |> dispatch) ] [
@@ -303,18 +317,19 @@ module ViewGen =
             div [ _class "col-sm-10" ] [
                 // TODO Make dynamic based on information held by the type, rather than having to specify all types manually.
                 (match field.PropertyType with
-                | t when t = typeof<FieldDataTypes.Text.ShortText> -> genStringInput existingValue 100 dispatch
-                | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput existingValue 9999 dispatch
-                | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput existingValue 2 dispatch
-                | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput existingValue 1000 dispatch
-                | t when t = typeof<FieldDataTypes.Geography.CoordinateDMS> -> genStringInput existingValue 100 dispatch
-                | t when t = typeof<FieldDataTypes.Author.Author> -> genStringInput existingValue 2000 dispatch
-                | t when t = typeof<FieldDataTypes.DigitalObjectIdentifier.DigitalObjectIdentifier> -> genStringInput existingValue 150 dispatch
-                | t when t = typeof<FieldDataTypes.IntRange.IntRange> -> genStringInput existingValue 50 dispatch
-                | t when t = typeof<float> -> genFloatInput existingValue dispatch
-                | t when t = typeof<int> -> genFloatInput existingValue dispatch
+                | t when t = typeof<FieldDataTypes.Text.ShortText> -> genStringInput field existingValue 100 dispatch
+                | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput field existingValue 9999 dispatch
+                | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput field existingValue 2 dispatch
+                | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput field existingValue 1000 dispatch
+                | t when t = typeof<FieldDataTypes.Geography.CoordinateDMS> -> genStringInput field existingValue 100 dispatch
+                | t when t = typeof<FieldDataTypes.Author.Author> -> genStringInput field existingValue 2000 dispatch
+                | t when t = typeof<FieldDataTypes.DigitalObjectIdentifier.DigitalObjectIdentifier> -> genStringInput field existingValue 150 dispatch
+                | t when t = typeof<FieldDataTypes.IntRange.IntRange> -> genStringInput field existingValue 50 dispatch
+                | t when t = typeof<FieldDataTypes.StratigraphicSequence.Depth> -> genFloatInput field existingValue dispatch
+                | t when t = typeof<float> -> genFloatInput field existingValue dispatch
+                | t when t = typeof<int> -> genFloatInput field existingValue dispatch
                 | t when t = typeof<bool> -> genTrueFalseToggle existingValue dispatch
-                | _ -> genStringInput existingValue 9999 dispatch)
+                | _ -> genStringInput field existingValue 9999 dispatch)
                 genHelp field
             ]
         ]
