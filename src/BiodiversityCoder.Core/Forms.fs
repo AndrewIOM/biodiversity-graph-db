@@ -464,7 +464,8 @@ module ViewGen =
                     // Fields have no data entered yet. Render using blank field view model.
                     forEach (Reflection.FSharpType.GetRecordFields(nestedType)) <| fun field ->
                         renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId)
-            | false -> empty // Unsupported type (not a record or DU).
+            | false ->
+                text <| sprintf "Unsupported type: %A / %A (is a union: %A)" field nestedType ((Reflection.FSharpType.IsUnion(nestedType, System.Reflection.BindingFlags.NonPublic)))  //empty // Unsupported type (not a record or DU).
 
     let makeNodeForm'<'a> (nodeViewModel: NodeViewModel option) buttonName dispatch validateRelations (requiredRelations:RelationViewModel list) =
         div [ _class "simple-box" ] [

@@ -191,7 +191,8 @@ module FieldDataTypes =
             Suffix: string option
         }
 
-        type Author = private Author of AuthorDetails
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type Author = private Author of char list * string * string option
 
         let regex = "(\S+) ?([A-z]*), ?([A-z]){1}[\.| ]{0,2}([A-z]){0,1}[\.| ]{0,2}([A-z]){0,1}"
 
@@ -209,14 +210,12 @@ module FieldDataTypes =
                     else if m.Groups.[3].Success then [ m.Groups.[3].Value.[0] ]
                     else []
                 let suffix = if m.Groups.[2].Length > 0 then Some m.Groups.[2].Value else None
-                {
-                    Initials = initials
-                    LastName = m.Groups.[1].Value
-                    Suffix = suffix
-                } |> Author |> Ok
+                (initials, m.Groups.[1].Value, suffix) |> Author |> Ok
             else Error "Authors must be specified in the format: Surname, M. A. C. (or Surname,M.A.C or Surname, M A C)"
 
-        let unwrap (Author details) = details
+        let unwrap (Author (a,b: string,c)) = {
+            Initials = a; LastName = b; Suffix = c
+        }
 
         type Author with 
             static member TryCreate s = 
@@ -237,6 +236,7 @@ module FieldDataTypes =
     [<RequireQualifiedAccess>]
     module DigitalObjectIdentifier =
 
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type DigitalObjectIdentifier = private DigitalObjectIdentifier of string
 
         let doiRegex = "10.\d{4,9}\/[-._;()\/:A-Z0-9]+"
@@ -261,6 +261,7 @@ module FieldDataTypes =
     [<RequireQualifiedAccess>]
     module IntRange =
 
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type IntRange = private IntRange of int * int
 
         let regex = "^([0-9]+) - ([0-9]+)"
