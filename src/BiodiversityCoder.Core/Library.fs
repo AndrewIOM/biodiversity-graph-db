@@ -1169,7 +1169,7 @@ module App =
                                 h3 [] [ text "Manually add an individul source" ]
                                 hr []
                                 div [ _class "card mb-4" ] [
-                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a journal article source" ]
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a source manually" ]
                                     div [ _class "card-body" ] [
                                         p [] [ text "Manually add a record for a published, grey literature, or 'dark data' source. Published sources include standard bibliographic texts such as journal articles, books and book chapters, and theses." ]
                                         p [] [ text "Grey literature. A common working definition of 'grey literature' is: 'information produced on all levels of government, academia, business and industry in electronic and print formats not controlled by commercial publishing ie. where publishing is not the primary activity of the producing body.'" ]
