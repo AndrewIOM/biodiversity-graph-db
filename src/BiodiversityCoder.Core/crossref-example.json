@@ -1,0 +1,425 @@
+{
+    "status": "string",
+    "message-type": "work-list",
+    "message-version": "string",
+    "message": {
+      "items-per-page": 0,
+      "query": {
+        "start-index": 0,
+        "search-terms": "string"
+      },
+      "total-results": 0,
+      "next-cursor": "string",
+      "items": [
+        {
+          "institution": [
+            {
+              "name": "string",
+              "place": [
+                "string"
+              ],
+              "department": [
+                "string"
+              ],
+              "acronym": [
+                "string"
+              ]
+            }
+          ],
+          "indexed": {
+            "date-parts": [
+              [
+                0
+              ]
+            ],
+            "date-time": "2024-05-21T08:10:38.475Z",
+            "timestamp": 0
+          },
+          "posted": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "publisher-location": "string",
+          "update-to": [
+            {
+              "label": "string",
+              "DOI": "string",
+              "type": "string",
+              "updated": {
+                "date-parts": [
+                  [
+                    0
+                  ]
+                ],
+                "date-time": "2024-05-21T08:10:38.475Z",
+                "timestamp": 0
+              }
+            }
+          ],
+          "standards-body": [
+            {
+              "name": "string",
+              "acronym": [
+                "string"
+              ]
+            }
+          ],
+          "edition-number": "string",
+          "group-title": [
+            "string"
+          ],
+          "reference-count": 0,
+          "publisher": "string",
+          "issue": "string",
+          "isbn-type": [
+            {
+              "type": "string",
+              "value": [
+                "string"
+              ]
+            }
+          ],
+          "license": [
+            {
+              "URL": "string",
+              "start": {
+                "date-parts": [
+                  [
+                    0
+                  ]
+                ],
+                "date-time": "2024-05-21T08:10:38.475Z",
+                "timestamp": 0
+              },
+              "delay-in-days": 0,
+              "content-version": "string"
+            }
+          ],
+          "funder": [
+            {
+              "name": "string",
+              "DOI": "string",
+              "doi-asserted-by": "string",
+              "award": [
+                "string"
+              ]
+            }
+          ],
+          "content-domain": {
+            "domain": [
+              "string"
+            ],
+            "crossmark-restriction": true
+          },
+          "chair": [
+            {
+              "ORCID": "string",
+              "suffix": "string",
+              "given": "string",
+              "family": "string",
+              "affiliation": [
+                {
+                  "name": "string"
+                }
+              ],
+              "name": "string",
+              "authenticated-orcid": true,
+              "prefix": "string",
+              "sequence": "string"
+            }
+          ],
+          "short-container-title": "string",
+          "accepted": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "content-updated": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "published-print": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "abstract": "string",
+          "DOI": "string",
+          "type": "string",
+          "created": {
+            "date-parts": [
+              [
+                0
+              ]
+            ],
+            "date-time": "2024-05-21T08:10:38.475Z",
+            "timestamp": 0
+          },
+          "approved": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "page": "string",
+          "update-policy": "string",
+          "source": "string",
+          "is-referenced-by-count": 0,
+          "title": [
+            "string"
+          ],
+          "prefix": "string",
+          "volume": "string",
+          "clinical-trial-number": [
+            {
+              "clinical-trial-number": "string",
+              "registry": "string",
+              "type": "string"
+            }
+          ],
+          "author": [
+            {
+              "ORCID": "string",
+              "suffix": "string",
+              "given": "string",
+              "family": "string",
+              "affiliation": [
+                {
+                  "name": "string"
+                }
+              ],
+              "name": "string",
+              "authenticated-orcid": true,
+              "prefix": "string",
+              "sequence": "string"
+            }
+          ],
+          "member": "string",
+          "content-created": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "published-online": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "reference": {
+            "issn": "string",
+            "standards-body": "string",
+            "issue": "string",
+            "key": "string",
+            "series-title": "string",
+            "isbn-type": "string",
+            "doi-asserted-by": "string",
+            "first-page": "string",
+            "isbn": "string",
+            "doi": "string",
+            "component": "string",
+            "article-title": "string",
+            "volume-title": "string",
+            "volume": "string",
+            "author": "string",
+            "standard-designator": "string",
+            "year": "string",
+            "unstructured": "string",
+            "edition": "string",
+            "journal-title": "string",
+            "issn-type": "string"
+          },
+          "container-title": [
+            "string"
+          ],
+          "review": {
+            "type": "string",
+            "running-number": "string",
+            "revision-round": "string",
+            "stage": "string",
+            "competing-interest-statement": "string",
+            "recommendation": "string",
+            "language": "string"
+          },
+          "original-title": [
+            "string"
+          ],
+          "language": "string",
+          "link": [
+            {
+              "URL": "string",
+              "content-type": "string",
+              "content-version": "string",
+              "intended-application": "string"
+            }
+          ],
+          "deposited": {
+            "date-parts": [
+              [
+                0
+              ]
+            ],
+            "date-time": "2024-05-21T08:10:38.475Z",
+            "timestamp": 0
+          },
+          "score": 0.284,
+          "degree": "string",
+          "subtitle": [
+            "string"
+          ],
+          "translator": [
+            {
+              "ORCID": "string",
+              "suffix": "string",
+              "given": "string",
+              "family": "string",
+              "affiliation": [
+                {
+                  "name": "string"
+                }
+              ],
+              "name": "string",
+              "authenticated-orcid": true,
+              "prefix": "string",
+              "sequence": "string"
+            }
+          ],
+          "free-to-read": {
+            "start-date": {
+              "date-parts": [
+                [
+                  0
+                ]
+              ]
+            },
+            "end-date": {
+              "date-parts": [
+                [
+                  0
+                ]
+              ]
+            }
+          },
+          "editor": [
+            {
+              "ORCID": "string",
+              "suffix": "string",
+              "given": "string",
+              "family": "string",
+              "affiliation": [
+                {
+                  "name": "string"
+                }
+              ],
+              "name": "string",
+              "authenticated-orcid": true,
+              "prefix": "string",
+              "sequence": "string"
+            }
+          ],
+          "component-number": "string",
+          "short-title": [
+            "string"
+          ],
+          "issued": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "ISBN": [
+            "string"
+          ],
+          "references-count": 0,
+          "part-number": "string",
+          "journal-issue": {
+            "issue": "string"
+          },
+          "alternative-id": [
+            "string"
+          ],
+          "URL": "string",
+          "archive": [
+            "string"
+          ],
+          "relation": {
+            "additionalProp1": {
+              "id-type": "string",
+              "id": "string",
+              "asserted-by": "string"
+            },
+            "additionalProp2": {
+              "id-type": "string",
+              "id": "string",
+              "asserted-by": "string"
+            },
+            "additionalProp3": {
+              "id-type": "string",
+              "id": "string",
+              "asserted-by": "string"
+            }
+          },
+          "ISSN": [
+            "string"
+          ],
+          "issn-type": [
+            {
+              "type": "string",
+              "value": [
+                "string"
+              ]
+            }
+          ],
+          "subject": [
+            "string"
+          ],
+          "published-other": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "published": {
+            "date-parts": [
+              [
+                0
+              ]
+            ]
+          },
+          "assertion": [
+            {
+              "group": {
+                "name": "string",
+                "label": "string"
+              },
+              "explanation": {
+                "URL": "string"
+              },
+              "name": "string",
+              "value": "string",
+              "URL": "string",
+              "order": 0
+            }
+          ],
+          "subtype": "string",
+          "article-number": "string"
+        }
+      ]
+    }
+  }

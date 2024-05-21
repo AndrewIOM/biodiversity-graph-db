@@ -220,61 +220,147 @@ module Sources =
         | ComplexSubset of methodDescription:Text.Text
 
 
-module BibtexParser =
-    
-    open System.Text.RegularExpressions
-    open Sources
-    
-    let articleRegex = "@article{(.*),\nauthor = {(.*)},\ntitle = {(.*)},\njournal = {(.*)},\nyear = (.*),\nvolume = {(.*)},\nnumber = {(.*)},\npages = {(.*)--(.*)},\nmonth = {(.*)}}"
-    
-    let parse (bibText:string) =
-        if Regex.IsMatch(bibText, articleRegex)
-        then
-            let matches = Regex.Matches(bibText, articleRegex)
-            matches
-            |> Seq.cast<Match>
-            |> Seq.map(fun m ->
-                Bibliographic {
-                    Author = Text.create m.Groups.[2].Value |> Result.toOption
-                    Title = Text.create m.Groups.[3].Value |> Result.toOption
-                    Journal = Text.createShort m.Groups.[4].Value |> Result.toOption
-                    Year = Some <| int m.Groups.[5].Value
-                    Volume = Some <| int m.Groups.[6].Value
-                    Number = Some <| int m.Groups.[7].Value
-                    Pages = Some (int m.Groups.[8].Value, int m.Groups.[9].Value)
-                    Month = Some <| m.Groups.[10].Value
-                    DataAvailability = RecordTypes.NotAttachedToSource
-                }) |> Seq.toList |> Ok
-        else Error "No sources identified"
+    module BibtexParser =
+        
+        open System.Text.RegularExpressions
+        
+        let articleRegex = "@article{(.*),\nauthor = {(.*)},\ntitle = {(.*)},\njournal = {(.*)},\nyear = (.*),\nvolume = {(.*)},\nnumber = {(.*)},\npages = {(.*)--(.*)},\nmonth = {(.*)}}"
+        
+        let parse (bibText:string) =
+            if Regex.IsMatch(bibText, articleRegex)
+            then
+                let matches = Regex.Matches(bibText, articleRegex)
+                matches
+                |> Seq.cast<Match>
+                |> Seq.map(fun m ->
+                    Bibliographic {
+                        Author = Text.create m.Groups.[2].Value |> Result.toOption
+                        Title = Text.create m.Groups.[3].Value |> Result.toOption
+                        Journal = Text.createShort m.Groups.[4].Value |> Result.toOption
+                        Year = Some <| int m.Groups.[5].Value
+                        Volume = Some <| int m.Groups.[6].Value
+                        Number = Some <| int m.Groups.[7].Value
+                        Pages = Some (int m.Groups.[8].Value, int m.Groups.[9].Value)
+                        Month = Some <| m.Groups.[10].Value
+                        DataAvailability = RecordTypes.NotAttachedToSource
+                    }) |> Seq.toList |> Ok
+            else Error "No sources identified"
 
-module ColandrParser =
+    /// <summary>Access the CrossRef API to match references and easily import them.</summary>
+    module CrossRef =
 
-    open FSharp.Data
-    open System.IO
-    open Sources
+        open FSharp.Data
+        open RecordTypes
 
-    type Colandr = CsvProvider<"colandr-output.csv">
+        type CrossRef = JsonProvider<"crossref-example.json">
 
-    let private tryToInt (s:string) = 
-        match System.Int32.TryParse s with
-        | true, v -> Some v
-        | false, _ -> None
+        let lookup reference =
+            sprintf "https://api.crossref.org/works?query.bibliographic=%s&rows=2&mailto=am2288@cam.ac.uk" reference
+            |> CrossRef.Load
+        
+        let private intials (s:string) = s.Split(' ') |> Seq.map Seq.head
 
-    let syncColandr file =
-        if File.Exists(file) then
-            let colandr = Colandr.Load file
-            colandr.Rows 
-            |> Seq.where(fun row -> row.Citation_screening_status = "included")
-            |> Seq.map(fun row ->
-                Bibliographic {
-                    Author = Text.create row.Citation_authors |> Result.toOption
-                    Title = Text.create row.Citation_title |> Result.toOption
-                    Journal = Text.createShort row.Citation_journal_name |> Result.toOption
-                    Year = tryToInt row.Citation_pub_year
-                    Volume = if row.Citation_journal_volume.HasValue then Some (row.Citation_journal_volume.Value) else None
-                    Number = None
-                    Pages = None
-                    Month = None
-                    DataAvailability = RecordTypes.NotAttachedToSource
-                }) |> Ok
-        else Error "Colandr file does not exist"
+        let bestMatch (result:CrossRef.Root) =
+            if result.Status = "ok"
+            then
+                if result.Message.Items.Length = 2
+                then
+                    let isMatch = abs (result.Message.Items.[0].Score - result.Message.Items.[1].Score) > 1.0m
+                    if isMatch then
+                        printfn "Matched %s: %s" result.Message.Items.[0].Type result.Message.Items.[0].Title.[0]
+                        let m = result.Message.Items.[0]
+                        match m.Type with
+                        | "journal-article" -> 
+                            Result.result {
+                                let! firstAuthor = 
+                                    let a = m.Author |> Seq.find (fun s -> s.Sequence = "first")
+                                    Author.create (a.Family + ", " + (intials a.Given |> Seq.map string |> String.concat ". "))
+
+                                let! additionalAuthors =
+                                    m.Author 
+                                    |> Seq.filter (fun s -> s.Sequence = "additional")
+                                    |> Seq.map(fun a -> Author.create (a.Family + ", " + (intials a.Given |> Seq.map string |> String.concat ". ")))
+                                    |> Seq.toList
+                                    |> Result.ofList
+
+                                let! title = 
+                                    if m.Title.Length > 0 then Text.create m.Title.[0]
+                                    else Error "No title given by CrossRef"
+                                let! journal = 
+                                    if m.ContainerTitle.Length > 0 then Text.createShort m.ContainerTitle.[0]
+                                    else Error "No journal given by CrossRef"
+                                let! year, month = 
+                                    if m.Published.DateParts.Length > 0
+                                    then 
+                                        if m.Published.DateParts.[0].Length >= 2
+                                        then Ok (m.Published.DateParts.[0].[0], asMonth m.Published.DateParts.[0].[1])
+                                        else Error "No publication date specified"
+                                    else Error "No publication date specified"
+                                let volume = Int.tryParse m.Volume
+                                let number = Int.tryParse m.Issue
+                                let! doi = 
+                                    if System.String.IsNullOrEmpty m.Doi
+                                    then Ok None
+                                    else m.Doi |> DigitalObjectIdentifier.create |> Result.lift Some
+
+                                let j = {
+                                    FirstAuthor = firstAuthor
+                                    AdditionalAuthors = additionalAuthors
+                                    Title = title
+                                    Journal = journal
+                                    Year = year
+                                    Volume = volume
+                                    Number = number
+                                    PageRange = None
+                                    Month = month
+                                    DOI = doi
+                                }
+                                return (j |> JournalArticle |> PublishedSource |> Some)
+                            }
+
+                        | _ -> failwith result.Message.Items.[0].Type
+                    else Ok None
+                else Ok None
+            else Error "Could not successfully query CrossRef, either due to no connection or a bad request."
+
+        /// <summary>Attempts to match a reference to a record in CrossRef using the CrossRef API.</summary>
+        /// <param name="query">A search query for the 'bibliographic' field of the CrossRef API.</param>
+        /// <returns>A result indicating a successful match (as a BiodiversityCoder node) or mismatch.</returns>
+        let tryMatch query = 
+            try
+                query
+                |> lookup
+                |> bestMatch
+            with
+            | e -> Error e.Message
+
+    module ColandrParser =
+
+        open FSharp.Data
+        open System.IO
+
+        type Colandr = CsvProvider<"colandr-output.csv">
+
+        let private tryToInt (s:string) = 
+            match System.Int32.TryParse s with
+            | true, v -> Some v
+            | false, _ -> None
+
+        let syncColandr file =
+            if File.Exists(file) then
+                let colandr = Colandr.Load file
+                colandr.Rows 
+                |> Seq.where(fun row -> row.Citation_screening_status = "included")
+                |> Seq.map(fun row ->
+                    Bibliographic {
+                        Author = Text.create row.Citation_authors |> Result.toOption
+                        Title = Text.create row.Citation_title |> Result.toOption
+                        Journal = Text.createShort row.Citation_journal_name |> Result.toOption
+                        Year = tryToInt row.Citation_pub_year
+                        Volume = if row.Citation_journal_volume.HasValue then Some (row.Citation_journal_volume.Value) else None
+                        Number = None
+                        Pages = None
+                        Month = None
+                        DataAvailability = RecordTypes.NotAttachedToSource
+                    }) |> Ok
+            else Error "Colandr file does not exist"

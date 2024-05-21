@@ -319,10 +319,11 @@ module GraphStructure =
                                 (if d.YearPublished.IsSome then d.YearPublished.Value.ToString() else "Unknown year")
                                 d.Title.Value
                         | JournalArticle n ->
-                            sprintf "%s (%i). %s" 
-                                n.FirstAuthor.Display
+                            sprintf "%s (%i). %s. %s" 
+                                (FieldDataTypes.Author.authorListTruncated (n.FirstAuthor :: n.AdditionalAuthors) 5)
                                 n.Year
                                 n.Title.Value
+                                n.Journal.Value
                     | GreyLiteratureSource n ->
                         sprintf "%s (%s). [grey|%s] %s%s"
                             (FieldDataTypes.Author.authorList n.Contributors)

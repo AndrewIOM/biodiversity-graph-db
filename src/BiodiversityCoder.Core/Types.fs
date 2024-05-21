@@ -101,6 +101,13 @@ module Parse =
 
     let parseDouble = tryParseWith System.Double.TryParse
 
+module Int =
+
+    let tryParse (str:string) =
+        match System.Int32.TryParse str with
+        | true,int -> Some int
+        | _ -> None
+
 
 [<AutoOpen>]
 module Attributes =
@@ -232,6 +239,14 @@ module FieldDataTypes =
             if authors |> Seq.isEmpty then "Unknown author(s)"
             else authors |> List.map(fun (d: Author) -> d.Display) |> String.concat "; "
 
+        /// An author list string, where only the first n authors are displayed, followed by et al.
+        let authorListTruncated (authors: Author list) nDisplay =
+            if authors |> Seq.isEmpty then "Unknown author(s)"
+            else 
+                if authors.Length > nDisplay
+                then (authors |> List.truncate nDisplay |> List.map(fun (d: Author) -> d.Display) |> String.concat "; ") + " et al."
+                else authors |> List.map(fun (d: Author) -> d.Display) |> String.concat "; "
+
 
     [<RequireQualifiedAccess>]
     module DigitalObjectIdentifier =
@@ -239,7 +254,7 @@ module FieldDataTypes =
         [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type DigitalObjectIdentifier = private DigitalObjectIdentifier of string
 
-        let doiRegex = "10.\d{4,9}\/[-._;()\/:A-Z0-9]+"
+        let doiRegex = "(10.\d{4,9}\/[-._;()\/:A-Za-z0-9]+)"
 
         let create doi =
             if Text.RegularExpressions.Regex.IsMatch(doi, doiRegex)
@@ -489,6 +504,20 @@ module FieldDataTypes =
 
 
     type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
+    let asMonth = function
+        | 1 -> Some Jan
+        | 2 -> Some Feb
+        | 3 -> Some Mar
+        | 4 -> Some Apr
+        | 5 -> Some May
+        | 6 -> Some Jun
+        | 7 -> Some Jul
+        | 8 -> Some Aug
+        | 9 -> Some Sep
+        | 10 -> Some Oct
+        | 11 -> Some Nov
+        | 12 -> Some Dec
+        | _ -> None
 
     type Person = { FirstName: Text.ShortText; LastName: Text.ShortText }
 
