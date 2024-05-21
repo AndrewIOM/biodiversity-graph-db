@@ -67,6 +67,13 @@ module Create =
             else Error "The type is not a DU as specified in the view model"
         | FieldList newFields -> createFromViewModel propertyType (FieldList newFields)
 
+    /// Generate the name from the `Name` attribute if specified.
+    let fieldName (field: System.Reflection.PropertyInfo) =
+        match field.GetCustomAttributes(typeof<NameAttribute>, true) |> Seq.isEmpty with
+        | true -> field.Name
+        | false -> (field.GetCustomAttributes(typeof<NameAttribute>, true) |> Seq.head:?> NameAttribute).value
+
+
     let rec createFromViewModel (objType:System.Type) (viewModel: NodeViewModel) : Result<obj,string> = 
         printfn "Type passed in is %s" objType.Name
         match viewModel with
@@ -156,9 +163,9 @@ module Create =
             if Reflection.FSharpType.IsRecord(objType) then
                 let recordFields = Reflection.FSharpType.GetRecordFields(objType)
                 let values = recordFields |> Array.map(fun f ->
-                    if newFields |> Map.containsKey f.Name 
+                    if newFields |> Map.containsKey f.Name
                     then processField (newFields.[f.Name]) f.PropertyType createFromViewModel
-                    else Error "Some properties are missing" ) |> Array.toList |> Result.ofList
+                    else Error (sprintf "No data has been entered for: %s" (fieldName f)) ) |> Array.toList |> Result.ofList
                 match values with
                 | Ok values ->
                     let created = Reflection.FSharpValue.MakeRecord(objType, values |> List.toArray)
@@ -235,6 +242,14 @@ module ViewGen =
     let isList (t:System.Type) = t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<_ list>
 
     /// Generate help text from the `Help` attribute if specified.
+    let genUnits (field: System.Reflection.PropertyInfo) =
+        cond (field.GetCustomAttributes(typeof<UnitAttribute>, true) |> Seq.isEmpty) <| function
+        | true -> empty
+        | false ->
+            span [ _class "input-group-text" ] [
+                text (field.GetCustomAttributes(typeof<UnitAttribute>, true) |> Seq.head:?> HelpAttribute).Text ]
+
+    /// Generate help text from the `Help` attribute if specified.
     let genHelp (field: System.Reflection.PropertyInfo) =
         cond (field.GetCustomAttributes(typeof<HelpAttribute>, true) |> Seq.isEmpty) <| function
         | true -> empty
@@ -285,11 +300,17 @@ module ViewGen =
             | _ -> ""
         | None -> ""
 
-    let genStringInput existingValue maxLength dispatch =
-        input [ attr.maxlength maxLength; bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch); _class "form-control" ]
+    let genStringInput field existingValue maxLength dispatch =
+        div [ _class "input-group mb-3" ] [
+            input [ attr.maxlength maxLength; bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch); _class "form-control" ]
+            genUnits field
+        ]
 
-    let genFloatInput existingValue dispatch =
-        input [ bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch); _class "form-control" ]
+    let genFloatInput field existingValue dispatch =
+        div [ _class "input-group mb-3" ] [
+            input [ bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch); _class "form-control" ]
+            genUnits field
+        ]
 
     let genTrueFalseToggle existingValue dispatch =
         select [ _class "form-select"; bind.change.string (boolValue existingValue) (fun b -> Boolean (bool.Parse(b)) |> FieldValue |> dispatch) ] [
@@ -297,21 +318,27 @@ module ViewGen =
             option [ attr.value "True" ] [ text "Yes" ]
         ]
 
-    let genField (field:System.Reflection.PropertyInfo) existingValue dispatch =
+    let genField (field:System.Reflection.PropertyInfo) hideLabel existingValue dispatch =
         div [ _class "row mb-3" ] [
-            label [ attr.``for`` field.Name; _class "col-sm-2 col-form-label" ] [ genName field ]
+            cond hideLabel <| function
+            | false -> label [ attr.``for`` field.Name; _class "col-sm-2 col-form-label" ] [ genName field ]
+            | true -> empty
             div [ _class "col-sm-10" ] [
                 // TODO Make dynamic based on information held by the type, rather than having to specify all types manually.
                 (match field.PropertyType with
-                | t when t = typeof<FieldDataTypes.Text.ShortText> -> genStringInput existingValue 100 dispatch
-                | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput existingValue 9999 dispatch
-                | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput existingValue 2 dispatch
-                | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput existingValue 1000 dispatch
-                | t when t = typeof<FieldDataTypes.Geography.CoordinateDMS> -> genStringInput existingValue 100 dispatch
-                | t when t = typeof<float> -> genFloatInput existingValue dispatch
-                | t when t = typeof<int> -> genFloatInput existingValue dispatch
+                | t when t = typeof<FieldDataTypes.Text.ShortText> -> genStringInput field existingValue 100 dispatch
+                | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput field existingValue 9999 dispatch
+                | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput field existingValue 2 dispatch
+                | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput field existingValue 1000 dispatch
+                | t when t = typeof<FieldDataTypes.Geography.CoordinateDMS> -> genStringInput field existingValue 100 dispatch
+                | t when t = typeof<FieldDataTypes.Author.Author> -> genStringInput field existingValue 2000 dispatch
+                | t when t = typeof<FieldDataTypes.DigitalObjectIdentifier.DigitalObjectIdentifier> -> genStringInput field existingValue 150 dispatch
+                | t when t = typeof<FieldDataTypes.IntRange.IntRange> -> genStringInput field existingValue 50 dispatch
+                | t when t = typeof<FieldDataTypes.StratigraphicSequence.Depth> -> genFloatInput field existingValue dispatch
+                | t when t = typeof<float> -> genFloatInput field existingValue dispatch
+                | t when t = typeof<int> -> genFloatInput field existingValue dispatch
                 | t when t = typeof<bool> -> genTrueFalseToggle existingValue dispatch
-                | _ -> genStringInput existingValue 9999 dispatch)
+                | _ -> genStringInput field existingValue 9999 dispatch)
                 genHelp field
             ]
         ]
@@ -327,7 +354,7 @@ module ViewGen =
             ]
         ]
 
-    let rec renderPropertyInfo f (field: System.Reflection.PropertyInfo) (nestedVm:NodeViewModel -> NodeViewModel) (dispatch:NodeViewModel->unit) makeField' =
+    let rec renderPropertyInfo f (field: System.Reflection.PropertyInfo) (nestedVm:NodeViewModel -> NodeViewModel) hideLabel (dispatch:NodeViewModel->unit) makeField' =
         // Figure out if the field already has a value.
         cond (f |> Map.tryFind field.Name) <| function
         | Some v ->
@@ -338,20 +365,20 @@ module ViewGen =
                 makeField' (Some field) v nestedVm field.PropertyType dispatch
             | FieldValue existingValue -> 
                 // Field is a simple type with a value already set. Render with value.
-                genField field (Some existingValue) (fun s -> (nestedVm s) |> dispatch)
+                genField field hideLabel (Some existingValue) (fun s -> (nestedVm s) |> dispatch)
             | FieldList l ->
                 listGroup field [
                     forEach l <| fun k -> concat [
-                        makeField' (Some field) (snd k) (fun vm -> nestedVm <| FieldList([fst k, vm])) (field.PropertyType.GetProperty("Head").PropertyType) dispatch
-                        small [ on.click(fun _ -> (nestedVm (FieldList [fst k, NotEnteredYet])) |> dispatch) ] [ text "Remove this one" ]
+                        renderPropertyInfo (Map.ofList [ "Head", snd k ]) (field.PropertyType.GetProperty("Head")) (fun vm -> nestedVm <| FieldList([fst k, vm])) true dispatch makeField'
+                        small [ on.click(fun _ -> (nestedVm (FieldList [fst k, NotEnteredYet])) |> dispatch) ] [ a [ attr.href "#" ] [ text "Remove this one" ] ]
                     ]
-                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, FieldValue(Number 1)] )) |> dispatch) ] [ text "Add another" ] ]
+                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, FieldValue (Number 1)] )) |> dispatch) ] [ text "Add another" ] ]
             | Fields _
             | NotEnteredYet ->
                 cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [ 
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, FieldValue(Number 1))])) |> dispatch) ] [ text "Add another" ] ]
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, FieldValue (Number 1))])) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
                     // Field does not have an existing value. Render cleanly.
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
@@ -364,16 +391,16 @@ module ViewGen =
                         | true ->
                             // Is a record. Render fields nested.
                             forEach (Reflection.FSharpType.GetRecordFields(field.PropertyType)) <| fun field ->
-                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField'
+                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) false dispatch makeField'
                         | false ->
                             // Is not a DU or record. Render simple field.
-                            genField field None (fun s -> (nestedVm s) |> dispatch)
+                            genField field hideLabel None (fun s -> (nestedVm s) |> dispatch)
         | None ->
             // Field does not have an existing value. Render cleanly.
             cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, FieldValue(Number 1))] )) |> dispatch) ] [ text "Add another" ] ]
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, FieldValue (Number 1))] )) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
                     | true -> 
@@ -385,10 +412,10 @@ module ViewGen =
                         | true ->
                             // Is a record. Render fields nested.
                             forEach (Reflection.FSharpType.GetRecordFields(field.PropertyType)) <| fun field ->
-                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch makeField'
+                                renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) false dispatch makeField'
                         | false ->
                             // Is not a DU or record. Render simple field.
-                            genField field None (fun s -> (nestedVm s) |> dispatch)
+                            genField field hideLabel None (fun s -> (nestedVm s) |> dispatch)
 
     /// Generate form fields corresponding to a nested node view model.
     /// Each level may be a DU, which leads to generation of a select box with case options
@@ -413,12 +440,12 @@ module ViewGen =
                                         | Some fv -> 
                                             cond fv <| function
                                             | Fields fv ->
-                                                renderPropertyInfo fv field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
-                                            | _ -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
-                                        | None -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
+                                                renderPropertyInfo fv field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) false dispatch (makeField formId)
+                                            | _ -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) false dispatch (makeField formId)
+                                        | None -> renderPropertyInfo f field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) false dispatch (makeField formId)
                                 | _ ->
                                     // None of the fields have any entered values yet. Render all of them cleanly.
-                                    forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
+                                    forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) false dispatch (makeField formId)
                             | None -> empty ]
                     | NotEnteredYet
                     | _ ->
@@ -431,7 +458,7 @@ module ViewGen =
                             cond (Reflection.FSharpType.GetUnionCases(nestedType) |> Seq.tryFind(fun c -> c.Name = (Reflection.FSharpType.GetUnionCases(nestedType).[0].Name))) <| function
                             | Some s ->
                                 // None of the fields have any entered values yet. Render all of them cleanly.
-                                forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU((Reflection.FSharpType.GetUnionCases(nestedType).[0].Name), Fields([field.Name, vm] |> Map.ofList))) dispatch (makeField formId)
+                                forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU((Reflection.FSharpType.GetUnionCases(nestedType).[0].Name), Fields([field.Name, vm] |> Map.ofList))) false dispatch (makeField formId)
                             | None -> empty
                         ]
         | false -> // Is not a DU.
@@ -441,12 +468,12 @@ module ViewGen =
                 | Fields f ->
                     // Fields already have some data entered. Render with existing values.
                     forEach (Reflection.FSharpType.GetRecordFields(nestedType)) <| fun field ->
-                        renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId)
+                        renderPropertyInfo f field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) false dispatch (makeField formId)
                 | _ ->
                     // Fields have no data entered yet. Render using blank field view model.
                     forEach (Reflection.FSharpType.GetRecordFields(nestedType)) <| fun field ->
-                        renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) dispatch (makeField formId)
-            | false -> empty // Unsupported type (not a record or DU).
+                        renderPropertyInfo Map.empty field (fun vm -> nestedVm <| Fields([field.Name, vm] |> Map.ofList)) false dispatch (makeField formId)
+            | false -> text <| sprintf "Error making form: unsupported type. %A / %A" field nestedType
 
     let makeNodeForm'<'a> (nodeViewModel: NodeViewModel option) buttonName dispatch validateRelations (requiredRelations:RelationViewModel list) =
         div [ _class "simple-box" ] [

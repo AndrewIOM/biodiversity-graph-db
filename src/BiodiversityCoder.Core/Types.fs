@@ -101,6 +101,13 @@ module Parse =
 
     let parseDouble = tryParseWith System.Double.TryParse
 
+module Int =
+
+    let tryParse (str:string) =
+        match System.Int32.TryParse str with
+        | true,int -> Some int
+        | _ -> None
+
 
 [<AutoOpen>]
 module Attributes =
@@ -119,10 +126,17 @@ module Attributes =
 
     /// An attribute to display guidance text when specifying data for a 
     /// property or field.
+    [<AttributeUsage(AttributeTargets.Property)>]
     type HelpAttribute(text: string) =
         inherit Attribute()
         with member __.Text = text
 
+    /// An attribute to add the required units to the right side of the
+    /// input box.
+    [<AttributeUsage(AttributeTargets.Property)>]
+    type UnitAttribute(text: string) =
+        inherit Attribute()
+        with member __.Text = text
 
 // Services shared with MAUI
 type IFolderPicker =
@@ -174,6 +188,116 @@ module FieldDataTypes =
 
         let create (culture:CultureInfo) =
             culture.TwoLetterISOLanguageName |> LanguageCode
+
+    [<RequireQualifiedAccess>]
+    module Author =
+
+        type AuthorDetails = {
+            Initials: char list
+            LastName: string
+            Suffix: string option
+        }
+
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type Author = private Author of char list * string * string option
+
+        let regex = "(\S+) ?([A-z]*), ?([A-z]){1}[\.| ]{0,2}([A-z]){0,1}[\.| ]{0,2}([A-z]){0,1}"
+
+        /// Creates an Author from a string where
+        /// the format is surname, initials. Initials may
+        /// be seperated with dots, spaces, or both.
+        let create (authorString:string) =
+            if Text.RegularExpressions.Regex.IsMatch(authorString, regex)
+            then
+                let m = Text.RegularExpressions.Regex.Match(authorString, regex)
+                printfn "Matches %A" m.Groups.[2].Success
+                let initials =
+                    if m.Groups.[5].Success then [ m.Groups.[3].Value.[0]; m.Groups.[4].Value.[0]; m.Groups.[5].Value.[0] ]
+                    else if m.Groups.[4].Success then [ m.Groups.[3].Value.[0]; m.Groups.[4].Value.[0] ]
+                    else if m.Groups.[3].Success then [ m.Groups.[3].Value.[0] ]
+                    else []
+                let suffix = if m.Groups.[2].Length > 0 then Some m.Groups.[2].Value else None
+                (initials, m.Groups.[1].Value, suffix) |> Author |> Ok
+            else Error "Authors must be specified in the format: Surname, M. A. C. (or Surname,M.A.C or Surname, M A C)"
+
+        let unwrap (Author (a,b: string,c)) = {
+            Initials = a; LastName = b; Suffix = c
+        }
+
+        type Author with 
+            static member TryCreate s = 
+                match s with 
+                | Text s -> s |> create
+                | _ -> Error "You must specify authors in the format Surname, F. N."
+                |> Result.toOption
+            member this.Value = unwrap this
+            member this.Display = 
+                let a = unwrap this
+                sprintf "%s, %s" a.LastName (a.Initials |> List.map string |> String.concat ". ")
+
+        let authorList authors =
+            if authors |> Seq.isEmpty then "Unknown author(s)"
+            else authors |> List.map(fun (d: Author) -> d.Display) |> String.concat "; "
+
+        /// An author list string, where only the first n authors are displayed, followed by et al.
+        let authorListTruncated (authors: Author list) nDisplay =
+            if authors |> Seq.isEmpty then "Unknown author(s)"
+            else 
+                if authors.Length > nDisplay
+                then (authors |> List.truncate nDisplay |> List.map(fun (d: Author) -> d.Display) |> String.concat "; ") + " et al."
+                else authors |> List.map(fun (d: Author) -> d.Display) |> String.concat "; "
+
+
+    [<RequireQualifiedAccess>]
+    module DigitalObjectIdentifier =
+
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type DigitalObjectIdentifier = private DigitalObjectIdentifier of string
+
+        let doiRegex = "(10.\d{4,9}\/[-._;()\/:A-Za-z0-9]+)"
+
+        let create doi =
+            if Text.RegularExpressions.Regex.IsMatch(doi, doiRegex)
+            then
+                let m = Text.RegularExpressions.Regex.Match(doi, doiRegex)
+                m.Groups.[1].Value |> DigitalObjectIdentifier |> Ok
+            else Error "DOIs must be in the format 10.1126/science.aar3646 or https://doi.org/10.1126/science.aar3646"
+
+        let private unwrap (DigitalObjectIdentifier l) = l
+
+        type DigitalObjectIdentifier with 
+            static member TryCreate s = 
+                match s with 
+                | Text s -> s |> create
+                | _ -> Error "Not a valid DOI"
+                |> Result.toOption
+            member this.Value = unwrap this
+
+    [<RequireQualifiedAccess>]
+    module IntRange =
+
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type IntRange = private IntRange of int * int
+
+        let regex = "^([0-9]+) - ([0-9]+)"
+
+        let create doi =
+            if Text.RegularExpressions.Regex.IsMatch(doi, regex)
+            then
+                let m = Text.RegularExpressions.Regex.Match(doi, regex)
+                let n1, n2 = m.Groups.[1].Value |> int, m.Groups.[2].Value |> int
+                (min n1 n2, max n1 n2) |> IntRange |> Ok
+            else Error "Ranges should be in the format 12 - 14"
+
+        let private unwrap (IntRange (a,b)) = (a,b)
+
+        type IntRange with 
+            static member TryCreate s = 
+                match s with 
+                | Text s -> s |> create
+                | _ -> Error "Not a valid range."
+                |> Result.toOption
+            member this.Value = unwrap this
 
     [<RequireQualifiedAccess>]
     module Geography =
@@ -378,7 +502,7 @@ module FieldDataTypes =
         /// a date node and the cal yr BP time series. This helps us keep track
         /// of how each temporal extent relates to the harmonised (calibrated years)
         /// master time series.
-        and OldDateSimple =
+        type OldDateSimple =
             | BP of bpDate:float<uncalYearBP>
             | CalYrBP of calibratedDate:float<calYearBP> * calibrationTechnique:Text.ShortText option
             | HistoryYearAD of calendarYear:float<AD>
@@ -386,8 +510,25 @@ module FieldDataTypes =
 
 
     type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
+    let asMonth = function
+        | 1 -> Some Jan
+        | 2 -> Some Feb
+        | 3 -> Some Mar
+        | 4 -> Some Apr
+        | 5 -> Some May
+        | 6 -> Some Jun
+        | 7 -> Some Jul
+        | 8 -> Some Aug
+        | 9 -> Some Sep
+        | 10 -> Some Oct
+        | 11 -> Some Nov
+        | 12 -> Some Dec
+        | _ -> None
+
     type Person = { FirstName: Text.ShortText; LastName: Text.ShortText }
+
     type License =
+        | ``No license specified``
         | ``Public Domain Mark``
         | ``Creative Commons Public Domain Dedication``
         | ``Open Data Commons Public Domain Dedication and License``
@@ -401,5 +542,5 @@ module FieldDataTypes =
         | ``Creative Commons Attribution-NoDerivatives 4 International``
         | ``Creative Commons Attribution-NonCommercial-ShareAlike 4 International``
         | ``Creative Commons Attribution-NonCommercial-NoDerivatives 4 International``
-        | ``No license specified``
         | Other of Text.ShortText
+        | OtherAtWebsite of Uri option

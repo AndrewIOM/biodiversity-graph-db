@@ -72,6 +72,7 @@ module App =
             SelectedSource: SelectedSource option
             TaxonLookup: TaxonomicLookupModel
             LeaveFieldsFilled: bool
+            CrossRefLookupModel: CrossRefLookupModel
         }
 
     and MessageType =
@@ -98,6 +99,11 @@ module App =
         Result: (Population.Taxonomy.TaxonNode * list<Population.PopulationNodeRelation>) option
     }
     
+    and CrossRefLookupModel = {
+        SearchTerm: string
+        Match: Sources.Source option
+    }
+
     and SelectedSource = {
         MarkedPrimary: IsPrimarySource
         AddingNewSource: bool
@@ -136,7 +142,8 @@ module App =
         | Exclude of because:Sources.ExclusionReason * notes:FieldDataTypes.Text.Text
 
     let initModel =
-        { RelationCreationViewModels = Map.empty; LeaveFieldsFilled = false; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Message = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty }, Cmd.none
+        { RelationCreationViewModels = Map.empty; LeaveFieldsFilled = false; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Message = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty
+          CrossRefLookupModel = { SearchTerm = ""; Match = None } }, Cmd.none
 
     type Message =
         | SetPage of Page
@@ -169,6 +176,10 @@ module App =
         | CompleteSection of string
         | ChangeCodingProblem of string * string
         | SubmitCodingProblem
+        | EnterCrossRefSearch of string
+        | SearchCrossRef of string
+        | ClearCrossRef
+        | AddCrossRefMatch
 
     and LookupTaxonMessage =
         | ChangeFormFields of TaxonomicLookupModel
@@ -241,7 +252,7 @@ module App =
         | ChangeImportText s -> { model with Import = s }, Cmd.none
         | SetFolderManually s -> { model with FolderLocation = s }, Cmd.none
         | ImportBibtex -> 
-            match BibtexParser.parse model.Import with
+            match Sources.BibtexParser.parse model.Import with
             | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
             | Ok nodes ->
                 let nodes = nodes |> List.map (Sources.SourceNode.Unscreened >> GraphStructure.Node.SourceNode)
@@ -255,7 +266,7 @@ module App =
             match model.Graph with
             | Some g ->
                 try
-                    match ColandrParser.syncColandr (System.IO.Path.Combine(g.Directory,"colandr-titleabs-screen-results.csv")) with
+                    match Sources.ColandrParser.syncColandr (System.IO.Path.Combine(g.Directory,"colandr-titleabs-screen-results.csv")) with
                     | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
                     | Ok nodes ->
                         let nodes = nodes |> Seq.map (Sources.SourceNode.Unscreened >> GraphStructure.Node.SourceNode) |> Seq.toList
@@ -757,6 +768,28 @@ module App =
             | Some s -> { model with SelectedSource = Some { s with ProposedDatabaseLink = p } }, Cmd.none
             | None -> model, Cmd.none
 
+        | EnterCrossRefSearch s -> { model with CrossRefLookupModel = { model.CrossRefLookupModel with SearchTerm = s }}, Cmd.none
+        | SearchCrossRef q ->
+            match Sources.CrossRef.tryMatch q with
+            | Ok m ->
+                match m with
+                | Some n -> { model with CrossRefLookupModel = { model.CrossRefLookupModel with Match = Some n }}, Cmd.none
+                | None -> { model with Message = Some (InfoMessage, sprintf "No viable match found in CrossRef for %s" model.CrossRefLookupModel.SearchTerm); CrossRefLookupModel = { model.CrossRefLookupModel with Match = None }}, Cmd.none
+            | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
+        | ClearCrossRef -> { model with CrossRefLookupModel = { SearchTerm = ""; Match = None } }, Cmd.none
+        | AddCrossRefMatch -> 
+            match model.Graph with
+            | Some g ->
+                match model.CrossRefLookupModel.Match with
+                | Some m ->
+                    match Storage.addNodes g [ GraphStructure.SourceNode (Sources.SourceNode.Unscreened m) ] with
+                    | Ok (g,n) ->
+                        let newNodeId = (n.Head |> fst |> fst).AsString
+                        { model with Graph = Some g; Message = Some (SuccessMessage, sprintf "Source %s added successfully" newNodeId ); CrossRefLookupModel = { SearchTerm = ""; Match = None } }, Cmd.none
+                    | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
+                | None -> { model with Message = Some (ErrorMessage,"Cannot add a match, as one has not been found") }, Cmd.none
+            | None -> model, Cmd.none
+
 
     let _class = attr.``class``
 
@@ -920,6 +953,22 @@ module App =
         | Sources.Source.Database d -> Some d.FullName
         | Sources.Source.DatabaseEntry _ -> None
         | Sources.Source.GreyLiterature g -> Some g.Title
+        | Sources.Source.GreyLiteratureSource g -> Some g.Title
+        | Sources.Source.DarkDataSource d -> Some d.Details
+        | Sources.Source.PublishedSource s ->
+            match s with
+            | Sources.Book b -> Some b.BookTitle
+            | Sources.BookChapter c -> Some c.ChapterTitle
+            | Sources.Dissertation c -> Some c.Title
+            | Sources.IndividualDataset d -> Some d.Title
+            | Sources.JournalArticle d -> Some d.Title
+
+    let sourceDetailsView source =
+        div [ _class "card"; attr.style "width: 30rem" ] [
+            div [ _class "card-body" ] [
+                textf "%A" source
+            ]
+        ]
 
     let scenarioView<'a> title description formTitle formDescription extraElements (model:Model) dispatch =
         concat [
@@ -1157,48 +1206,50 @@ module App =
                                 hr []
                                 p [] [ text "Sources may be imported in bulk from Colandr screening, or added individually." ]
                                 alert model dispatch
-                                h3 [] [ text "Add an individual source - manually" ]
+                                h3 [] [ text "Add an individual source" ]
                                 hr []
+
                                 div [ _class "card mb-4" ] [
-                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a journal article source" ]
+                                    div [ _class "card-header text-bg-secondary" ] [ text "CrossRef lookup" ]
                                     div [ _class "card-body" ] [
-                                        p [] [ text "Manually add a record for a published journal article." ]
-                                        ViewGen.makeNodeForm<Sources.ArticleMetadataNode> (model.NodeCreationViewModels |> Map.tryFind "ArticleMetadataNode") [] (FormMessage >> dispatch)
+                                        p [] [ text "You may use CrossRef to attempt to find the full reference for a source. If the source is found by CrossRef, you can quickly import it into BiodiversityCoder without manual data entry." ]
+                                        input [ _class "form-control form-control-sm"; bind.input.string model.CrossRefLookupModel.SearchTerm (EnterCrossRefSearch >> dispatch) ]
+                                        cond model.CrossRefLookupModel.Match <| function
+                                        | Some m -> concat [
+                                            sourceDetailsView m
+                                            button [ _class "btn btn-secondary"; on.click (fun _ -> AddCrossRefMatch |> dispatch)] [ text "Confirm (add this source)" ]
+                                            button [ _class "btn btn-secondary"; on.click (fun _ -> ClearCrossRef |> dispatch)] [ text "Clear (cancel)" ] ]
+                                        | None ->
+                                            button [ _class "btn btn-primary"; on.click(fun _ -> model.CrossRefLookupModel.SearchTerm |> SearchCrossRef |> dispatch) ] [ text "Try to match" ]
                                     ]
                                 ]
-                                br []
+                                
                                 div [ _class "card mb-4" ] [
-                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a 'Dark Data' source" ]
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a source manually" ]
                                     div [ _class "card-body" ] [
-                                        p [] [ text "Manually add 'dark data'. Dark data is a dataset that has not been published, nor has it been digitised into an existing database." ]
-                                        ViewGen.makeNodeForm<Sources.DarkDataNode> (model.NodeCreationViewModels |> Map.tryFind "DarkDataNode") [] (FormMessage >> dispatch)
-                                    ]
-                                ]
-                                br []
-                                div [ _class "card mb-4" ] [
-                                    div [ _class "card-header text-bg-secondary" ] [ text "Add a 'Grey Literature' source" ]
-                                    div [ _class "card-body" ] [
-                                        p [] [ text "Manually add a 'grey literature' source. Compared to 'dark data' (above), 'grey literature' is a written source that has not been published or is otherwise not indexed in bibliographic databases. Examples some Government publications, internal reports etc." ]
-                                        ViewGen.makeNodeForm<Sources.GreySourceNode> (model.NodeCreationViewModels |> Map.tryFind "DarkDataNode") [] (FormMessage >> dispatch)
+                                        p [] [ text "Manually add a record for a published, grey literature, or 'dark data' source. Published sources include standard bibliographic texts such as journal articles, books and book chapters, and theses." ]
+                                        p [] [ text "Grey literature. A common working definition of 'grey literature' is: 'information produced on all levels of government, academia, business and industry in electronic and print formats not controlled by commercial publishing ie. where publishing is not the primary activity of the producing body.'" ]
+                                        p [] [ text "Dark Data. 'Dark data are datasets where - unlike grey literature - there has been no 'write-up' of the results. For example, data sat on a floppy disk in someone's drawer." ]
+                                        p [] [ strong [] [ text "NOTE: Do NOT use the last three options - Bibliographic, GreyLiterature, DarkData - as these have been depreciated." ] ]
+                                        ViewGen.makeNodeForm<Sources.Source> (model.NodeCreationViewModels |> Map.tryFind "Source") [] (FormMessage >> dispatch)
                                     ]
                                 ]
 
-                                h3 [] [ text "Add one or many sources - from bibtex" ]
-                                hr []
-                                p [] [ text "You may import " ]
                                 div [ _class "card mb-4" ] [
-                                    div [ _class "card-header text-bg-secondary" ] [ text "Import new sources" ]
+                                    div [ _class "card-header text-bg-secondary" ] [ text "Advanced bulk import options (use with caution)" ]
                                     div [ _class "card-body" ] [
-                                        text "Enter a bibtex-format file below."
+                                        h5 [] [ text "Import using BibTex format"]
+                                        hr []
+                                        text "Enter the contents of a bibtex-format file in the text box below to import many sources at once, for example from a reference manager exported file."
+                                        br []
                                         textarea [ bind.input.string model.Import (fun s -> ChangeImportText s |> dispatch) ] []
                                         button [ on.click (fun _ -> ImportBibtex |> dispatch ) ] [ text "Import" ]
+                                        h5 [] [ text "Import from a Colandr export file" ]
+                                        hr []
+                                        p [] [ text "You can import sources from Colandr using the button below. The colandr raw output should be saved as 'colandr-titleabs-screen-results.csv' in the graph database ('data') folder." ]
+                                        button [ _class "btn btn-primary"; on.click (fun _ -> ImportColandr |> dispatch) ] [ text "Import from Colandr (title-abstract screening)" ]
                                     ]
                                 ]
-                                h3 [] [ text "Bulk import from Colandr" ]
-                                hr []
-                                p [] [ text "You can import sources from Colandr using the button below. The colandr raw output should be saved as 'colandr-titleabs-screen-results.csv' in the graph database folder." ]
-                                button [ _class "btn btn-primary"; on.click (fun _ -> ImportColandr |> dispatch) ] [ text "Import from Colandr (title-abstract screening)" ]
-
                             ]
 
                         | Page.Extract -> div [] [

@@ -300,6 +300,42 @@ module GraphStructure =
                     | DarkData n -> sprintf "'Dark data' from %s" n.Contact.LastName.Value
                     | Database n -> sprintf "Database: %s" n.FullName.Value
                     | DatabaseEntry n -> sprintf "Database: %s - entry %s" n.DatabaseAbbreviation.Value n.UniqueIdentifierInDatabase.Value
+                    | PublishedSource p ->
+                        match p with
+                        | Book b ->
+                            sprintf "%s (%i). [book] %s. %s"
+                                (FieldDataTypes.Author.authorList (List.concat [ [ b.BookFirstAuthor]; b.BookAdditionalAuthors ] ))
+                                b.BookCopyrightYear b.BookTitle.Value
+                                    (if b.ISBN.IsSome then b.ISBN.Value.Value + " (ISBN)"
+                                        else if b.ISSNDOI.IsSome then b.ISSNDOI.Value.Value + " (ISSN/DOI)" else "")
+                        | BookChapter n ->
+                            sprintf "%s. [book chapter] %s"
+                                (FieldDataTypes.Author.authorList (List.concat [ [ n.ChapterFirstAuthor]; n.ChapterAdditionalAuthors ] ))
+                                n.ChapterTitle.Value
+                        | Dissertation n ->
+                            sprintf "%s (%i). [dissertation] %s" n.Author.Display n.CompletionYear n.Title.Value
+                        | IndividualDataset d ->
+                            sprintf "%s (%s). [dataset] %s." (FieldDataTypes.Author.authorList d.Contributors)
+                                (if d.YearPublished.IsSome then d.YearPublished.Value.ToString() else "Unknown year")
+                                d.Title.Value
+                        | JournalArticle n ->
+                            sprintf "%s (%i). %s. %s" 
+                                (FieldDataTypes.Author.authorListTruncated (n.FirstAuthor :: n.AdditionalAuthors) 5)
+                                n.Year
+                                n.Title.Value
+                                n.Journal.Value
+                    | GreyLiteratureSource n ->
+                        sprintf "%s (%s). [grey|%s] %s%s"
+                            (FieldDataTypes.Author.authorList n.Contributors)
+                            (if n.PostedYear.IsSome then n.PostedYear.Value.ToString() else "Unknown year")
+                            (n.Format.ToString())
+                            n.Title.Value
+                            (if n.Institution.IsSome then ". " + n.Institution.Value.Value else "")
+                    | DarkDataSource n ->
+                        sprintf "%s unpublished. [dataset] %s%s"
+                            (FieldDataTypes.Author.authorList (List.concat [ [ n.Investigator]; n.AdditionalInvestigators ]))
+                            (if n.Title.IsSome then n.Title.Value.Value + ". " else "")
+                            (n.Details.Value |> Seq.truncate 50 |> Seq.map string |> String.concat "")
             | ExposureNode e ->
                 match e with
                 | YearNode y -> sprintf "%i cal yr BP" y.Year
@@ -313,6 +349,7 @@ module GraphStructure =
 
     let private safeString s = System.Text.RegularExpressions.Regex.Replace(System.Net.WebUtility.HtmlEncode s, @"[^aA-zZ_ \-+0-9]", replacement = "")
     let private toLower (s:string) = s.ToLower()
+    let private takeAlphaNumFirstChars seq = seq |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat ""
 
     /// Makes a unique key based on the node type. Some nodes have a unique identifier, while
     /// others do not.
@@ -397,6 +434,64 @@ module GraphStructure =
                 | DarkData n -> sprintf "darkdata_%s_%s_%s" (safeString n.Contact.LastName.Value) (safeString n.Contact.FirstName.Value) ((n.Details.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> Seq.truncate 40 |> String.concat "")) |> toLower |> friendlyKey
                 | Database n -> sprintf "database_%s" (safeString n.Abbreviation.Value) |> toLower |> friendlyKey
                 | DatabaseEntry n -> sprintf "database_%s_entry_%s" (safeString n.DatabaseAbbreviation.Value) (safeString n.UniqueIdentifierInDatabase.Value) |> toLower |> friendlyKey
+                | PublishedSource n ->
+                    match n with
+                    | PublishedSource.Book n ->
+                        String.concat "_" [
+                            "book"
+                            n.BookFirstAuthor.Value.LastName
+                            (n.BookAdditionalAuthors |> List.map(fun c -> c.Value.LastName) |> takeAlphaNumFirstChars)
+                            (n.BookTitle.Value.Split(" ") |> takeAlphaNumFirstChars)
+                            string n.BookCopyrightYear
+                        ] |> toLower |> friendlyKey
+                    | PublishedSource.BookChapter n ->
+                        String.concat "_" [
+                            "book-chapter"
+                            n.ChapterFirstAuthor.Value.LastName
+                            (n.ChapterAdditionalAuthors |> List.map(fun c -> c.Value.LastName) |> takeAlphaNumFirstChars)
+                            (n.ChapterTitle.Value.Split(" ") |> takeAlphaNumFirstChars)
+                            string n.FirstPage
+                        ] |> toLower |> friendlyKey
+                    | PublishedSource.IndividualDataset n ->
+                        String.concat "_" [
+                            "published-dataset"
+                            (if n.Contributors.IsEmpty then "unk" else n.Contributors.Head.Value.LastName)
+                            (if n.Contributors.IsEmpty then "unk" else n.Contributors.Head.Value.Initials |> List.map string |> String.concat "")
+                            (if n.Contributors.Length > 1 then n.Contributors.Tail |> List.map(fun c -> c.Value.LastName) |> takeAlphaNumFirstChars else "single")
+                            (if n.YearPublished.IsNone then "unk" else string n.YearPublished.Value)
+                            (n.Title.Value.Split(" ") |> takeAlphaNumFirstChars)
+                        ] |> toLower |> friendlyKey
+                    | PublishedSource.Dissertation n ->
+                        String.concat "_" [
+                            "dissertation"
+                            n.Author.Value.LastName
+                            n.Author.Value.Initials |> List.map string |> String.concat ""
+                            n.CompletionYear |> string
+                            (n.Title.Value.Split(" ") |> takeAlphaNumFirstChars)
+                        ] |> toLower |> friendlyKey
+                    | PublishedSource.JournalArticle n ->
+                        String.concat "_" [
+                            "pub"
+                            n.FirstAuthor.Value.LastName
+                            (n.Title.Value.Split(" ") |> takeAlphaNumFirstChars)
+                            string n.Year ] |> toLower |> friendlyKey
+                | GreyLiteratureSource n ->
+                    sprintf "greylit_%s_%s_%s_%s_%s_%s"
+                        (n.Format.ToString() |> toLower |> safeString)
+                        (if n.Contributors.IsEmpty then "unk" else n.Contributors.Head.Value.LastName)
+                        (if n.Contributors.IsEmpty then "unk" else n.Contributors.Head.Value.Initials |> List.map string |> String.concat "")
+                        (if n.Contributors.Length > 1 then n.Contributors.Tail |> List.map(fun c -> c.Value.LastName) |> takeAlphaNumFirstChars else "single")
+                        (if n.PostedYear.IsNone then "unk" else string n.PostedYear.Value)
+                        (n.Title.Value.Split(" ") |> takeAlphaNumFirstChars)
+                    |> toLower |> friendlyKey
+                | DarkDataSource n ->
+                    sprintf "darkdata_%s_%s_%s_%s_%s"
+                        n.Investigator.Value.LastName
+                        (n.Investigator.Value.Initials |> List.map string |> String.concat "")
+                        (n.AdditionalInvestigators |> List.map(fun c -> c.Value.LastName) |> takeAlphaNumFirstChars)
+                        (if n.CompilationYear.IsNone then "unk" else string n.CompilationYear.Value)
+                        (n.Details.Value.Split(" ") |> takeAlphaNumFirstChars)
+                    |> toLower |> friendlyKey
         | ExposureNode e ->
             match e with
             | YearNode y -> sprintf "%iybp" y.Year |> toLower |> friendlyKey
@@ -462,9 +557,7 @@ module GraphStructure =
                 match t with
                 // Source nodes:
                 | (t: System.Type) when t = typeof<Sources.SourceNode> -> n :?> Sources.SourceNode |> SourceNode |> Ok
-                | (t: System.Type) when t = typeof<Sources.ArticleMetadataNode> -> n :?> Sources.ArticleMetadataNode |> Bibliographic |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
-                | (t: System.Type) when t = typeof<Sources.DarkDataNode> -> n :?> Sources.DarkDataNode |> DarkData |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
-                | (t: System.Type) when t = typeof<Sources.GreySourceNode> -> n :?> Sources.GreySourceNode |> GreyLiterature |> Sources.SourceNode.Unscreened |> SourceNode |> Ok
+                | (t: System.Type) when t = typeof<Sources.Source> -> n :?> Sources.Source |> Unscreened |> SourceNode |> Ok
                 // Population nodes:
                 | (t: System.Type) when t = typeof<BioticProxies.BioticProxyNode> -> n :?> BioticProxies.BioticProxyNode |> BioticProxyNode |> PopulationNode |> Ok
                 | (t: System.Type) when t = typeof<BioticProxies.BioticProxyCategoryNode> -> n :?> BioticProxies.BioticProxyCategoryNode |> BioticProxyCategoryNode |> PopulationNode |> Ok
@@ -569,7 +662,7 @@ module GraphStructure =
                 | UsesPrimarySource -> compare source sink rel (Relation.Source UsesPrimarySource)
                 | UsedDatabase(accessDate, subset) -> compare source sink rel (Relation.Source <| UsedDatabase(accessDate,subset))
                 | HasDataset -> compare source sink rel (Relation.Source HasDataset)
-
+                | IsChapterIn -> compare source sink rel (Relation.Source IsChapterIn)
 
         /// Add a node relation to the graph, validating that the relation
         /// can only occur on valid node sources / sinks in the process.

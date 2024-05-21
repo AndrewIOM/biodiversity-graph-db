@@ -78,27 +78,36 @@ module Scenarios =
 
     and SiteOnlyScenario = {
         // Space
-        [<Name("Site name")>]
+        [<Name("Sampling site name")>]
+        [<Help("The site name is the most granular location label specified for the sampling site within the text. For example, if a core was taken from Kettlehole Lake, Western Alberta, Canada, you would put Kettlehole Lake in this field.")>]
         SiteName: Text.ShortText
+        [<Name("Sampling site location")>]
         [<Help("Enter the location for the specific timeline in the granularity specified in the text. Locations may be specified as a spatial point ('Site') or polygon ('Area'), or as political units. If using a point ('site'), you may enter coordinates in decimal degrees (DD) using 'Site' or in DMS (format: 40°26'46\"N,79°58'56\"W) using 'SiteDMS'. If using political units, attempt to ensure that the unit conforms to those in GADM https://www.gadm.org/maps.html. If entering a polygon, enter your polygon in WKT format (e.g. POLYGON((26.41 41.79,43.11 41.79,43.11 32.87,26.41 32.87,26.41 41.79)). You can make WKT format polygons on this web page: http://arthur-e.github.io/Wicket/sandbox-gmaps3.html")>]
         SamplingLocation: Geography.SamplingLocation
-        [<Help("The parent material from which the 'Outcome' (biodiversity measure) has been measured. Example: pollen from a midden is subfossil.")>]
+        [<Name("Sample origin")>]
+        [<Help("The parent material / despositional environment from which the 'Outcome' (biodiversity measure) has been measured. For example, pollen from a midden is 'subfossil'; diatoms from a lake sediment core are 'lakesediment', and a layered archaeological site is 'excavation'.")>]
         SampleOrigin: Population.Context.SampleOrigin
-        [<Help("An optional free-form description of the characteristics of the location of the time-series. Example: lake surrounded by Salix and Betula tall shrubs.")>]
+        [<Name("Do you want to enter a more detailed description of the sampling site?")>]
+        [<Help("Select 'None' for No, and 'Some' for Yes. An optional free-form description of the characteristics of the location of the time-series. Example: lake surrounded by Salix and Betula tall shrubs.")>]
         SampleLocationDescription: Text.Text option
         // Time
-        [<Name("Earliest year")>]
-        [<Help("If a qualitative time period is used, please use the standard form.")>]
+        [<Name("Temporal extent: earliest year")>]
+        [<Help("The earliest year - as stated by the authors - in which a measurement of biodiversity has been taken. For example, for a sediment core, this will be the estimated date of the deepest level sampled in the core. If a qualitative time period is used, do not use this 'Scenario' but use the full data entry tools on the 'Extract' tab.")>]
         EarliestYear: OldDate.OldDateSimple
-        [<Name("Earliest year uncertainty")>]
+        [<Name("Temporal extent: earliest year uncertainty")>]
+        [<Help("")>]
         EarliestYearUncertainty: OldDate.MeasurementError
-        [<Name("Latest year")>]
+        [<Name("Temporal extent: latest year")>]
+        [<Help("The latest (newest) year - as stated by the authors - in which a measurement of biodiversity has been taken.")>]
         LatestYear: OldDate.OldDateSimple
         [<Name("Latest year uncertainty")>]
         LatestYearUncertainty: OldDate.MeasurementError
-        [<Name("Timeline characteristics")>]
+        [<Name("How is time represented within the timeline?")>]
+        [<Help("Record whether the timeline has been presented as a continuous record. A timeline is usually presented as continuous, meaning that time has been mesured, modelled or inferred over a single continuous period. Alternatively, it may be discontinuous if there are breaks in the series, such as a 'hiatus' during which deposition of sediment stopped for a number of years.")>]
         Timeline: Exposure.StudyTimeline.IndividualTimelineNode
         // Taxon
+        [<Name("Proxy categories used")>]
+        [<Help("For this timeline, which proxies did the authors use to measure biodiversity? For example, for a sediment core there may have been multiple microfossil proxies used, such as pollen, diatoms, and plant macrofossils.")>]
         ProxyCategories: Population.BioticProxies.BioticProxyCategoryNode list
 
     } with 
