@@ -222,11 +222,11 @@ module Merge =
                 let newData =
                     match oldFl |> Seq.tryFind(fun (i,_) -> i = fst fl.Head) with
                     | Some oldField -> 
-                        if snd fl.Head = NotEnteredYet
+                        if snd fl.Head = FieldValue(Text "--REMOVE LIST ITEM--")
                         then oldFl |> List.except [ oldField ]
                         else oldFl |> List.except [ oldField ] |> List.append [(fst oldField, updateNodeViewModel (snd oldField) (snd fl.Head))]
                     | None -> 
-                        if snd fl.Head = NotEnteredYet 
+                        if snd fl.Head = FieldValue(Text "--REMOVE LIST ITEM--")
                         then oldFl 
                         else oldFl |> List.append [ fl.Head ]
                     |> List.sortBy fst
@@ -370,15 +370,15 @@ module ViewGen =
                 listGroup field [
                     forEach l <| fun k -> concat [
                         renderPropertyInfo (Map.ofList [ "Head", snd k ]) (field.PropertyType.GetProperty("Head")) (fun vm -> nestedVm <| FieldList([fst k, vm])) true dispatch makeField'
-                        small [ on.click(fun _ -> (nestedVm (FieldList [fst k, NotEnteredYet])) |> dispatch) ] [ a [ attr.href "#" ] [ text "Remove this one" ] ]
+                        small [ on.click(fun _ -> (nestedVm (FieldList [fst k, FieldValue (Text "--REMOVE LIST ITEM--")])) |> dispatch) ] [ a [ attr.href "#" ] [ text "Remove this one" ] ]
                     ]
-                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, FieldValue (Number 1)] )) |> dispatch) ] [ text "Add another" ] ]
+                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, NotEnteredYet] )) |> dispatch) ] [ text "Add another" ] ]
             | Fields _
             | NotEnteredYet ->
                 cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [ 
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, FieldValue (Number 1))])) |> dispatch) ] [ text "Add another" ] ]
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)])) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
                     // Field does not have an existing value. Render cleanly.
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
@@ -400,7 +400,7 @@ module ViewGen =
             cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, FieldValue (Number 1))] )) |> dispatch) ] [ text "Add another" ] ]
+                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)] )) |> dispatch) ] [ text "Add another" ] ]
                 | false ->
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
                     | true -> 
