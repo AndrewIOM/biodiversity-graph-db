@@ -16,10 +16,11 @@
     <Compile Include="Storage.fs" />
     <Compile Include="Forms.fs" />
     <Compile Include="Scenarios.fs" />
+    <Compile Include="Views.fs" />
     <Compile Include="Library.fs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Bolero" Version="0.18.16" />
+    <PackageReference Include="Bolero" Version="0.23.52" />
     <PackageReference Include="Cyjs.NET" Version="0.0.4" />
     <PackageReference Include="FSharp.Data" Version="5.0.2" />
     <PackageReference Include="Microsoft.FSharpLu.Json" Version="0.11.7" />
