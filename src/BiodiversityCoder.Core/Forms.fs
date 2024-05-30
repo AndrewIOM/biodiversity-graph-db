@@ -244,17 +244,21 @@ module ViewGen =
     /// Generate help text from the `Help` attribute if specified.
     let genUnits (field: System.Reflection.PropertyInfo) =
         cond (field.GetCustomAttributes(typeof<UnitAttribute>, true) |> Seq.isEmpty) <| function
-        | true -> empty
+        | true -> empty ()
         | false ->
-            span [ _class "input-group-text" ] [
-                text (field.GetCustomAttributes(typeof<UnitAttribute>, true) |> Seq.head:?> HelpAttribute).Text ]
+            span {
+                attr.``class`` "input-group-text"
+                text (field.GetCustomAttributes(typeof<UnitAttribute>, true) |> Seq.head:?> HelpAttribute).Text
+            }
 
     /// Generate help text from the `Help` attribute if specified.
     let genHelp (field: System.Reflection.PropertyInfo) =
         cond (field.GetCustomAttributes(typeof<HelpAttribute>, true) |> Seq.isEmpty) <| function
-        | true -> empty
-        | false -> small [ _class "form-text" ] [ 
-            text (field.GetCustomAttributes(typeof<HelpAttribute>, true) |> Seq.head:?> HelpAttribute).Text ]
+        | true -> empty ()
+        | false -> small {
+            attr.``class`` "form-text"
+            text (field.GetCustomAttributes(typeof<HelpAttribute>, true) |> Seq.head:?> HelpAttribute).Text
+        }
 
     /// Generate the name from the `Name` attribute if specified.
     let genName (field: System.Reflection.PropertyInfo) =
@@ -264,20 +268,33 @@ module ViewGen =
 
     /// Generate a select box for all possible cases when a DU.
     let genSelect (field: System.Reflection.PropertyInfo option) t selected dispatch =
-        div [ _class "row mb-3" ] [
+        div {
+            attr.``class`` "row mb-3"
             cond field <| function
-            | Some f -> label [ attr.``for`` f.Name; _class "col-sm-2 col-form-label" ] [ genName f ]
-            | None -> label [ attr.``for`` "Select type"; _class "col-sm-2 col-form-label" ] [ text "Select type" ]
-            div [ _class "col-sm-10" ] [
-                select [ _class "form-select"; bind.change.string selected (fun s -> s |> dispatch)] [
+            | Some f -> label {
+                attr.``for`` f.Name
+                _class "col-sm-2 col-form-label"
+                genName f }
+            | None -> label {
+                attr.``for`` "Select type"
+                _class "col-sm-2 col-form-label"
+                text "Select type" }
+            div {
+                _class "col-sm-10"
+                select {
+                    _class "form-select"
+                    bind.change.string selected (fun s -> s |> dispatch)
                     forEach (Reflection.FSharpType.GetUnionCases(t)) <| fun c ->
-                    option [ attr.value c.Name ] [ text c.Name ]
-                ]
+                    option {
+                        attr.value c.Name
+                        text c.Name
+                    }
+                }
                 cond field <| function
                 | Some f -> genHelp f
-                | None -> empty
-            ]
-        ]
+                | None -> empty ()
+            }
+        }
 
     let textValue = function
         | Some v ->
@@ -301,58 +318,94 @@ module ViewGen =
         | None -> ""
 
     let genStringInput field existingValue maxLength dispatch =
-        div [ _class "input-group mb-3" ] [
-            input [ attr.maxlength maxLength; bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch); _class "form-control" ]
+        div {
+            _class "input-group mb-3"
+            input {
+                attr.maxlength maxLength
+                bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch)
+                _class "form-control"
+            }
             genUnits field
-        ]
+        }
 
     let genFloatInput field existingValue dispatch =
-        div [ _class "input-group mb-3" ] [
-            input [ bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch); _class "form-control" ]
+        div {
+            _class "input-group mb-3"
+            input {
+                bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch)
+                _class "form-control"
+            }
             genUnits field
-        ]
+        }
 
     let genTrueFalseToggle existingValue dispatch =
-        select [ _class "form-select"; bind.change.string (boolValue existingValue) (fun b -> Boolean (bool.Parse(b)) |> FieldValue |> dispatch) ] [
-            option [ attr.value "False" ] [ text "No" ]
-            option [ attr.value "True" ] [ text "Yes" ]
-        ]
+        select {
+            _class "form-select"
+            bind.change.string (boolValue existingValue) (fun b -> Boolean (bool.Parse(b)) |> FieldValue |> dispatch)
+            option {
+                attr.value "False"
+                text "No"
+            }
+            option {
+                attr.value "True"
+                text "Yes"
+            }
+        }
 
     let genField (field:System.Reflection.PropertyInfo) hideLabel existingValue dispatch =
-        div [ _class "row mb-3" ] [
+        div {
+            _class "row mb-3"
             cond hideLabel <| function
-            | false -> label [ attr.``for`` field.Name; _class "col-sm-2 col-form-label" ] [ genName field ]
-            | true -> empty
-            div [ _class "col-sm-10" ] [
+            | false -> 
+                label {
+                    attr.``for`` field.Name
+                    _class "col-sm-2 col-form-label"
+                    genName field
+                }
+            | true -> empty ()
+            div {
+                yield _class "col-sm-10"
                 // TODO Make dynamic based on information held by the type, rather than having to specify all types manually.
-                (match field.PropertyType with
-                | t when t = typeof<FieldDataTypes.Text.ShortText> -> genStringInput field existingValue 100 dispatch
-                | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput field existingValue 9999 dispatch
-                | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput field existingValue 2 dispatch
-                | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput field existingValue 1000 dispatch
-                | t when t = typeof<FieldDataTypes.Geography.CoordinateDMS> -> genStringInput field existingValue 100 dispatch
-                | t when t = typeof<FieldDataTypes.Author.Author> -> genStringInput field existingValue 2000 dispatch
-                | t when t = typeof<FieldDataTypes.DigitalObjectIdentifier.DigitalObjectIdentifier> -> genStringInput field existingValue 150 dispatch
-                | t when t = typeof<FieldDataTypes.IntRange.IntRange> -> genStringInput field existingValue 50 dispatch
-                | t when t = typeof<FieldDataTypes.StratigraphicSequence.Depth> -> genFloatInput field existingValue dispatch
-                | t when t = typeof<float> -> genFloatInput field existingValue dispatch
-                | t when t = typeof<int> -> genFloatInput field existingValue dispatch
-                | t when t = typeof<bool> -> genTrueFalseToggle existingValue dispatch
-                | _ -> genStringInput field existingValue 9999 dispatch)
-                genHelp field
-            ]
-        ]
+                let f =
+                    match field.PropertyType with
+                    | t when t = typeof<FieldDataTypes.Text.ShortText> -> genStringInput field existingValue 100 dispatch
+                    | t when t = typeof<FieldDataTypes.Text.Text> -> genStringInput field existingValue 9999 dispatch
+                    | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput field existingValue 2 dispatch
+                    | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput field existingValue 1000 dispatch
+                    | t when t = typeof<FieldDataTypes.Geography.CoordinateDMS> -> genStringInput field existingValue 100 dispatch
+                    | t when t = typeof<FieldDataTypes.Author.Author> -> genStringInput field existingValue 2000 dispatch
+                    | t when t = typeof<FieldDataTypes.DigitalObjectIdentifier.DigitalObjectIdentifier> -> genStringInput field existingValue 150 dispatch
+                    | t when t = typeof<FieldDataTypes.IntRange.IntRange> -> genStringInput field existingValue 50 dispatch
+                    | t when t = typeof<FieldDataTypes.StratigraphicSequence.Depth> -> genFloatInput field existingValue dispatch
+                    | t when t = typeof<float> -> genFloatInput field existingValue dispatch
+                    | t when t = typeof<int> -> genFloatInput field existingValue dispatch
+                    | t when t = typeof<bool> -> genTrueFalseToggle existingValue dispatch
+                    | _ -> genStringInput field existingValue 9999 dispatch
+                yield f
+                yield genHelp field
+            }
+        }
 
-    let listGroup field items =
-        div [ _class "row mb-3" ] [
-            label [ attr.``for`` (genName field); _class "col-sm-2 col-form-label" ] [ genName field ]
-            div [ _class "col-sm-10" ] [
-                div [ _class "list-group" ] [
-                    forEach items <| fun i -> div [ _class "list-group-item" ] [ i ]
+    let listGroup field (items: Bolero.Node seq) =
+        div {
+            _class "row mb-3"
+            label {
+                attr.``for`` (genName field)
+                _class "col-sm-2 col-form-label"
+                genName field
+            }
+            div {
+                _class "col-sm-10"
+                div {
+                    _class "list-group"
+                    forEach items <| fun i -> div { 
+                        _class "list-group-item"
+                        i
+                    }
                     genHelp field
-                ]
-            ]
-        ]
+                }
+            }
+        }
 
     let rec renderPropertyInfo f (field: System.Reflection.PropertyInfo) (nestedVm:NodeViewModel -> NodeViewModel) hideLabel (dispatch:NodeViewModel->unit) makeField' =
         // Figure out if the field already has a value.
@@ -368,17 +421,33 @@ module ViewGen =
                 genField field hideLabel (Some existingValue) (fun s -> (nestedVm s) |> dispatch)
             | FieldList l ->
                 listGroup field [
-                    forEach l <| fun k -> concat [
+                    forEach l <| fun k -> concat {
                         renderPropertyInfo (Map.ofList [ "Head", snd k ]) (field.PropertyType.GetProperty("Head")) (fun vm -> nestedVm <| FieldList([fst k, vm])) true dispatch makeField'
-                        small [ on.click(fun _ -> (nestedVm (FieldList [fst k, FieldValue (Text "--REMOVE LIST ITEM--")])) |> dispatch) ] [ a [ attr.href "#" ] [ text "Remove this one" ] ]
-                    ]
-                    button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, NotEnteredYet] )) |> dispatch) ] [ text "Add another" ] ]
+                        small {
+                            on.click(fun _ -> (nestedVm (FieldList [fst k, FieldValue (Text "--REMOVE LIST ITEM--")])) |> dispatch)
+                            a {
+                                attr.href "#"
+                                text "Remove this one"
+                            }
+                        }
+                        button {
+                            _class "btn btn-secondary-outline"
+                            on.click(fun _ -> (nestedVm (FieldList [(l |> List.map fst |> List.max) + 1, NotEnteredYet] )) |> dispatch)
+                            text "Add another"
+                        }
+                    }
+                ]
             | Fields _
             | NotEnteredYet ->
                 cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [ 
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)])) |> dispatch) ] [ text "Add another" ] ]
+                        button {
+                            _class "btn btn-secondary-outline"
+                            on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)])) |> dispatch)
+                            text "Add another"
+                        }
+                    ]
                 | false ->
                     // Field does not have an existing value. Render cleanly.
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
@@ -400,7 +469,12 @@ module ViewGen =
             cond (isList field.PropertyType) <| function
                 | true ->
                     listGroup field [
-                        button [ _class "btn btn-secondary-outline"; on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)] )) |> dispatch) ] [ text "Add another" ] ]
+                        button {
+                            _class "btn btn-secondary-outline"
+                            on.click(fun _ -> (nestedVm (FieldList [(0, NotEnteredYet)] )) |> dispatch)
+                            text "Add another"
+                        }
+                    ]
                 | false ->
                     cond (Reflection.FSharpType.IsUnion(field.PropertyType)) <| function
                     | true -> 
@@ -424,11 +498,11 @@ module ViewGen =
         cond (Reflection.FSharpType.IsUnion(nestedType)) <| function
         | true -> 
             // Is a DU. Display a select box to select possible cases.
-                concat [
+                concat {
                     cond viewModel <| function
                     | DU (selectedCase: string, vm) ->
                         // A DU case is selected. Display its fields for editing.
-                        concat [
+                        concat {
                             genSelect field nestedType selectedCase (fun (s: string) -> (nestedVm(DU(s,vm))) |> dispatch)
                             cond (Reflection.FSharpType.GetUnionCases(nestedType) |> Seq.tryFind(fun c -> c.Name = selectedCase)) <| function
                             | Some s ->
@@ -446,7 +520,8 @@ module ViewGen =
                                 | _ ->
                                     // None of the fields have any entered values yet. Render all of them cleanly.
                                     forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU(selectedCase, Fields([field.Name, vm] |> Map.ofList))) false dispatch (makeField formId)
-                            | None -> empty ]
+                            | None -> empty ()
+                        }
                     | NotEnteredYet
                     | _ ->
                         if Reflection.FSharpType.GetUnionCases(nestedType).Length <> 1 then
@@ -459,8 +534,8 @@ module ViewGen =
                             | Some s ->
                                 // None of the fields have any entered values yet. Render all of them cleanly.
                                 forEach (s.GetFields()) <| fun field -> renderPropertyInfo Map.empty field (fun vm -> nestedVm <| DU((Reflection.FSharpType.GetUnionCases(nestedType).[0].Name), Fields([field.Name, vm] |> Map.ofList))) false dispatch (makeField formId)
-                            | None -> empty
-                        ]
+                            | None -> empty ()
+                }
         | false -> // Is not a DU.
             cond (Reflection.FSharpType.IsRecord(nestedType)) <| function
             | true -> // Is an F# record. Generate display for all fields.
@@ -476,12 +551,17 @@ module ViewGen =
             | false -> text <| sprintf "Error making form: unsupported type. %A / %A" field nestedType
 
     let makeNodeForm'<'a> (nodeViewModel: NodeViewModel option) buttonName dispatch validateRelations (requiredRelations:RelationViewModel list) =
-        div [ _class "simple-box" ] [
+        div {
+            _class "simple-box"
             cond nodeViewModel <| function
             | Some vm -> makeField (typeof<'a>).Name None vm id typeof<'a> (fun vm -> EnterNodeCreationData((typeof<'a>).Name,vm) |> dispatch)
             | None -> makeField (typeof<'a>).Name None NotEnteredYet id typeof<'a> (fun vm -> EnterNodeCreationData((typeof<'a>).Name,vm) |> dispatch)
-            button [ _class "btn btn-primary"; on.click (fun _ -> AddOrUpdateNode((typeof<'a>), validateRelations, requiredRelations) |> dispatch) ] [ text buttonName ]
-        ]
+            button {
+                _class "btn btn-primary"
+                on.click (fun _ -> AddOrUpdateNode((typeof<'a>), validateRelations, requiredRelations) |> dispatch)
+                text buttonName
+            }
+        }
 
     /// Given a node type (maybe a DU or record or normal type),
     /// generate a set of fields to use for inputting the data.
@@ -499,24 +579,30 @@ module ViewGen =
         cond graph <| function
         | Some g ->
             cond (g.Nodes<'node>()) <| function
-                | None -> empty
+                | None -> empty ()
                 | Some nodes ->
                     forEach nodes <| fun node ->
-                        option [ attr.value node.Key.AsString ] [ text node.Value ]
-        | None -> empty
+                        option {
+                            attr.value node.Key.AsString
+                            text node.Value
+                        }
+        | None -> empty ()
 
     /// Generate a list of select options based on available nodes in the graph.
     let optionGenFiltered<'node> filter (graph:Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> option) =
         cond graph <| function
         | Some g ->
             cond (g.Nodes<'node>()) <| function
-                | None -> empty
+                | None -> empty ()
                 | Some nodes ->
                     forEach nodes <| fun node ->
                         cond (filter node.Key) <| function
-                        | true -> option [ attr.value node.Key.AsString ] [ text node.Value ]
-                        | false -> empty
-        | None -> empty
+                        | true -> option {
+                            attr.value node.Key.AsString
+                            text node.Value
+                            }
+                        | false -> empty ()
+        | None -> empty ()
 
 
     module RelationsForms =
@@ -531,25 +617,55 @@ module ViewGen =
 
         /// Render a node relation field item.
         let selectExistingNode<'sinkNodeType> name helpText (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<string * GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
-            div [ _class "row mb-3" ] [
-                label [ _class "col-sm-2 col-form-label" ] [ text name ]
-                div [ _class "col-sm-10" ] [
+            div {
+                _class "row mb-3"
+                label {
+                    _class "col-sm-2 col-form-label"
+                    text name
+                }
+                div {
+                    _class "col-sm-10"
                     cond (relationValues |> Map.tryFind (name, rel)) <| function
                     | Some v -> 
                         cond v.IsEmpty <| function
-                        | true -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                        | false -> select [ _class "form-select"; bind.change.string v.Head.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v])|> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                    | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                    small [ _class "form-text" ] [ text helpText ]
-                ]
-            ]
+                        | true -> 
+                            select {
+                                _class "form-select"
+                                bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v])|> dispatch )
+                                optionGen<'sinkNodeType> (Some graph)
+                            }
+                        | false -> 
+                            select {
+                                _class "form-select"
+                                bind.change.string v.Head.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v])|> dispatch )
+                                optionGen<'sinkNodeType> (Some graph)
+                            }
+                    | None -> 
+                        select {
+                            _class "form-select"
+                            bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v]) |> dispatch )
+                            optionGen<'sinkNodeType> (Some graph)
+                        }
+                    small {
+                        _class "form-text"
+                        text helpText
+                    }
+                }
+            }
 
         /// Allows selecting an existing node by the entry of a specific data. Data is passed
         /// to the relation, allowing for construction of complex relation data.
         let selectExistingBy<'sinkNodeType, 'relArg> name helpText (rel:'relArg -> GraphStructure.ProposedRelation) (tryCompute:'relArg -> (Graph.UniqueKey * 'relArg) option) (relationVms:Map<string * string,Map<string, NodeViewModel * GraphStructure.ProposedRelation option>>) sourceNodeName toggle (relationValues:Map<string * GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
-            div [ _class "row mb-3" ] [
-                div [ _class "col-sm-2 col-form-label" ] [ label [] [ text name ] ]
-                div [ _class "col-sm-10" ] [
+            div {
+                _class "row mb-3"
+                div {
+                    _class "col-sm-2 col-form-label"
+                    label { 
+                        text name
+                    }
+                }
+                div {
+                    _class "col-sm-10"
                     cond (relationVms |> Map.tryFind (sourceNodeName, toggle)) <| function
                     | Some existing ->
                         cond (existing |> Map.tryFind name) <| function
@@ -559,20 +675,23 @@ module ViewGen =
                                 // There is a set value for this field. Only show the selected value with destroy option.
                                 cond (relationValues |> Map.tryFind (name,p)) <| function
                                 | Some all ->
-                                    concat [
+                                    concat {
                                         forEach all <| fun v ->
                                             textf "Selected node is %s" v.AsString
-                                        button [ _class "btn btn-secondary"; on.click (fun _ -> 
-                                            EnterNodeRelationData(sourceNodeName, toggle, p, name, []) |> dispatch
-                                            EnterRelationCreationData(sourceNodeName, toggle, name, NotEnteredYet, None) |> dispatch)
-                                        ] [ text "Change" ]
-                                    ]
+                                        button {
+                                            _class "btn btn-secondary"
+                                            on.click (fun _ -> 
+                                                EnterNodeRelationData(sourceNodeName, toggle, p, name, []) |> dispatch
+                                                EnterRelationCreationData(sourceNodeName, toggle, name, NotEnteredYet, None) |> dispatch)
+                                            text "Change"
+                                        }
+                                    }
                                 | None -> text "Error finding selected node"
                             | None ->
                                 // There is no existing relation. Try and form one.
-                                concat [
+                                concat {
                                     makeField (typeof<'relArg>).Name None vm id typeof<'relArg> (fun vm -> EnterRelationCreationData(sourceNodeName, toggle, name, vm, None) |> dispatch)
-                                    button [
+                                    button {
                                         _class "btn btn-secondary"
                                         on.click(fun _ -> 
                                             Create.createFromViewModel typeof<'relArg> vm
@@ -584,69 +703,144 @@ module ViewGen =
                                             |> Result.iter(fun (key, r) -> 
                                                 EnterRelationCreationData(sourceNodeName, toggle, name, vm, Some (rel r)) |> dispatch
                                                 EnterNodeRelationData(sourceNodeName, toggle, rel r, name, [key]) |> dispatch))
-                                    ] [ text "Link" ]
-                                ]
+                                        text "Link"
+                                    }
+                                }
                         | None -> makeField (typeof<'relArg>).Name None NotEnteredYet id typeof<'relArg> (fun vm -> EnterRelationCreationData(sourceNodeName, toggle, name, vm, None) |> dispatch)
                     | None -> makeField (typeof<'relArg>).Name None NotEnteredYet id typeof<'relArg> (fun vm -> EnterRelationCreationData(sourceNodeName, toggle, name, vm, None) |> dispatch)
-                    small [ _class "form-text" ] [ text helpText ]
-                ]
-            ]
+                    small {
+                        _class "form-text"
+                        text helpText
+                    }
+                }
+            }
 
 
         /// Render a node relation field item.
         /// Allows entry of multiple sink nodes for this type of relation.
         let selectExistingNodeMulti<'sinkNodeType> (name: string) helpText (rel:GraphStructure.ProposedRelation) sourceNodeName toggle (relationValues:Map<string * GraphStructure.ProposedRelation, Graph.UniqueKey list>) graph dispatch =
-            div [ _class "row mb-3" ] [
-                label [ _class "col-sm-2 col-form-label" ] [ text name ]
-                div [ _class "col-sm-10" ] [
+            div {
+                _class "row mb-3"
+                label {
+                    _class "col-sm-2 col-form-label"
+                    text name
+                }
+                div {
+                    _class "col-sm-10"
                     cond (relationValues |> Map.tryFind (name, rel)) <| function
-                    | Some all -> concat [
-                        forEach all <| fun v ->
-                            select [ _class "form-select"; bind.change.string v.AsString (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                        select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ] ]
-                    | None -> select [ _class "form-select"; bind.change.string "" (fun v -> EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v]) |> dispatch ) ] [ optionGen<'sinkNodeType> (Some graph) ]
-                    small [ _class "form-text" ] [ text helpText ]
-                ]
-            ]
+                    | Some all -> 
+                        concat {
+                            forEach all <| fun v ->
+                                select {
+                                    _class "form-select"
+                                    bind.change.string v.AsString (fun v -> 
+                                        EnterNodeRelationData(sourceNodeName, toggle, rel, name, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch )
+                                    optionGen<'sinkNodeType> (Some graph)
+                                }
+                            select {
+                                _class "form-select"
+                                bind.change.string "" (fun v -> 
+                                    EnterNodeRelationData(sourceNodeName, toggle, rel, name, (Graph.stringToKey v :: (all |> List.except [Graph.stringToKey v]))) |> dispatch )
+                                optionGen<'sinkNodeType> (Some graph)
+                            }
+                        }
+                    | None -> 
+                        select {
+                            _class "form-select"
+                            bind.change.string "" (fun v -> 
+                                EnterNodeRelationData(sourceNodeName, toggle, rel, name, [Graph.stringToKey v]) |> dispatch )
+                            optionGen<'sinkNodeType> (Some graph)
+                        }
+                    small {
+                        _class "form-text"
+                        text helpText
+                    }
+                }
+            }
         
         /// Render a toggle for different combinations of possible relations.
         let relationsToggle<'a> name (elements: (string * (string -> string -> Map<string * GraphStructure.ProposedRelation,Graph.UniqueKey list> -> Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> (FormMessage -> unit) -> Bolero.Node) list) list) (currentRelations: Map<string,string * Map<string*GraphStructure.ProposedRelation,list<Graph.UniqueKey>>>) graph dispatch =
-                    cond (currentRelations |> Map.tryFind (typeof<'a>.Name)) <| function
-                    | Some (toggleSet, relationValues) -> concat [
-                                cond (elements.Length > 1) <| function
-                                | true ->
-                                    div [ _class "row mb-3" ] [
-                                        div [ _class "col-sm-2 col-form-label" ] [ label [] [text name ] ]
-                                        div [ _class "col-sm-10" ] [
-                                            div [ _class "btn-group" ] (elements |> List.map(fun (toggle,_) ->
-                                                cond (toggle = toggleSet) <| function
-                                                | true -> button [ _class "btn btn-outline-primary active"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                                | false -> button [ _class "btn btn-outline-primary";  on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                            ))
-                                        ]
-                                    ]
-                                | false -> empty
-                                cond (elements |> Seq.tryFind(fun (e,_) -> e = toggleSet)) <| function
-                                | Some (_,n) -> n |> List.map(fun n -> n (typeof<'a>.Name) toggleSet relationValues graph dispatch) |> concat
-                                | None -> empty
-                        ]
-                    | None -> 
-                        concat [
-                            cond (elements.Length > 1) <| function
-                            | true ->
-                                div [ _class "row" ] [
-                                        div [ _class "col-sm-2 col-form-label" ] [ label [] [text name ] ]
-                                        div [ _class "col-sm-10" ] [
-                                            div [ _class "btn-group"  ] (elements |> List.mapi(fun i (toggle,_) ->
-                                                    cond (i = 0) <| function
-                                                | true -> button [ _class "btn btn-outline-primary active"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                                | false -> button [ _class "btn btn-outline-primary";  on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                            ))
-                                        ]
-                                ]
-                            | false -> empty
-                            (elements.Head |> snd) |> List.map(fun n -> n (typeof<'a>.Name) (fst elements.Head) Map.empty graph dispatch) |> concat
-                        ]
+            cond (currentRelations |> Map.tryFind (typeof<'a>.Name)) <| function
+            | Some (toggleSet, relationValues) -> 
+                concat {
+                    cond (elements.Length > 1) <| function
+                    | true ->
+                        div {
+                            _class "row mb-3"
+                            div {
+                                _class "col-sm-2 col-form-label"
+                                label {
+                                    text name
+                                }
+                            }
+                            div {
+                                _class "col-sm-10"
+                                div {
+                                    _class "btn-group"
+                                    forEach elements <| fun (toggle, _) ->
+                                        cond (toggle = toggleSet) <| function
+                                        | true -> 
+                                            button {
+                                                _class "btn btn-outline-primary active"
+                                                on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch)
+                                                text toggle
+                                            }
+                                        | false -> 
+                                            button {
+                                                _class "btn btn-outline-primary"
+                                                on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch)
+                                                text toggle
+                                            }
+                                }
+                            }
+                        }
+                    | false -> empty ()
+                    cond (elements |> Seq.tryFind(fun (e,_) -> e = toggleSet)) <| function
+                    | Some (_,n) -> 
+                        concat {
+                            forEach n <| fun n ->
+                                n (typeof<'a>.Name) toggleSet relationValues graph dispatch
+                        }
+                    | None -> empty ()
+                }
+            | None -> 
+                concat {
+                    cond (elements.Length > 1) <| function
+                    | true ->
+                        div {
+                            _class "row"
+                            div {
+                                _class "col-sm-2 col-form-label"
+                                label {
+                                    text name
+                                }
+                            }
+                            div {
+                                _class "col-sm-10"
+                                div {
+                                    _class "btn-group"
+                                    let x = elements |> List.mapi(fun i (toggle,_) -> i,toggle)
+                                    forEach x <| fun (i, toggle) ->
+                                        cond (i = 0) <| function
+                                        | true ->
+                                            button {
+                                                _class "btn btn-outline-primary active"
+                                                on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch)
+                                                text toggle
+                                            }
+                                        | false ->
+                                            button {
+                                                _class "btn btn-outline-primary"
+                                                on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch)
+                                                text toggle
+                                            }
+                                }
+                            }
+                        }
+                    | false -> empty ()
+                    forEach (snd elements.Head) <| fun n ->
+                        n (typeof<'a>.Name) (fst elements.Head) Map.empty graph dispatch
+                }
 
         module Validation =
 

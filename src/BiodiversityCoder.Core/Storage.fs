@@ -236,6 +236,24 @@ module Storage =
             (unwrap graph).Graph |> Seq.tryFind(fun (n,_) -> fst n = guid)
         )
 
+    let tryFindRelationFriendlyName<'rel> relation store atom = 
+        atom
+        |> GraphStructure.Relations.nodeIdsByRelation<'rel> relation
+        |> Seq.tryHead
+        |> Option.bind (fun k -> atomFriendlyNameByKey k store)
+
+    let tryFindRelationNode<'rel> relation store atom = 
+        atom
+        |> GraphStructure.Relations.nodeIdsByRelation<'rel> relation
+        |> Seq.tryHead
+        |> Option.bind (fun k -> atomByKey k store)
+
+    let tryFindRelationNodes<'rel> relation store atom =
+        atom
+        |> GraphStructure.Relations.nodeIdsByRelation<'rel> relation
+        |> atomsByKey store
+
+
     let updateNode' updatedGraph (updatedAtom:(Graph.UniqueKey * GraphStructure.Node) * Graph.Adjacency<GraphStructure.Relation>) fileGraph =
         result {
             // 1. Update the index item (only if the pretty name has changed).
