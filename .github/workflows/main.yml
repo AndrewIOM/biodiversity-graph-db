@@ -49,7 +49,7 @@ jobs:
 
   # MAUI MacCatalyst Build
   build-mac:
-    runs-on: macos-13
+    runs-on: macos-14
     name: MacCatalyst Build
     steps:
       - name: Checkout
