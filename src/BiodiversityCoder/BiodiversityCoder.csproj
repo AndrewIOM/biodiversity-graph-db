@@ -18,7 +18,7 @@
 		<ApplicationId>im.acm.biodiversitycoder</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationVersion>1.11.0</ApplicationVersion>
+		<ApplicationVersion>1.9.1</ApplicationVersion>
 
 		<!-- Required for C# Hot Reload -->
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">14.0</SupportedOSPlatformVersion>
