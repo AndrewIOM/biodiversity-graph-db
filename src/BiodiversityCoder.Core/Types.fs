@@ -140,7 +140,7 @@ module Attributes =
 
 // Services shared with MAUI
 type IFolderPicker =
-    abstract member PickFolder : unit -> System.Threading.Tasks.Task<string>
+    abstract member PickFolder : System.Threading.CancellationToken -> System.Threading.Tasks.Task<string>
 
 /// Contains types that represent data fields within
 /// the graph and coding interface.
@@ -256,7 +256,7 @@ module FieldDataTypes =
 
         let doiRegex = "(10.\d{4,9}\/[-._;()\/:A-Za-z0-9]+)"
 
-        let create doi =
+        let create (doi:string) =
             if Text.RegularExpressions.Regex.IsMatch(doi, doiRegex)
             then
                 let m = Text.RegularExpressions.Regex.Match(doi, doiRegex)
@@ -281,7 +281,7 @@ module FieldDataTypes =
 
         let regex = "^([0-9]+) - ([0-9]+)"
 
-        let create doi =
+        let create (doi:string) =
             if Text.RegularExpressions.Regex.IsMatch(doi, regex)
             then
                 let m = Text.RegularExpressions.Regex.Match(doi, regex)
@@ -328,7 +328,7 @@ module FieldDataTypes =
             | p when p < 2 -> Error "Polygons must have at least three points"
             | _ -> points |> Polygon |> Ok 
 
-        let createCoordinate coordString =
+        let createCoordinate (coordString:string) =
             if System.Text.RegularExpressions.Regex.IsMatch(coordString, "^([0-9]{1,2})[:|°]([0-9]{1,2})[:|'|′]?([0-9]{1,2}(?:\.[0-9]+){0,1})?[\"|″]([N|S]),([0-9]{1,3})[:|°]([0-9]{1,2})[:|'|′]?([0-9]{1,2}(?:\.[0-9]+){0,1})?[\"|″]([E|W])$")
             then coordString |> CoordinateDMS |> Ok
             else Error "Coordinate was not in the format: 40°26'46\"N,79°01'00\"W"

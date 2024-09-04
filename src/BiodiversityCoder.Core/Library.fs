@@ -244,7 +244,7 @@ module App =
     }
 
 
-    let update (openFolder:unit -> Task<string>) message model =
+    let update (openFolder:System.Threading.CancellationToken -> Task<string>) message model =
         match message with
         | SetPage page -> { model with Page = page }, Cmd.none
         | DismissMessage -> { model with Message = None }, Cmd.none
@@ -290,8 +290,9 @@ module App =
                     | None -> { model with SelectedSource = Some { AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                 | None -> { model with Message = Some (ErrorMessage, sprintf "Could not find source with key %s [%A]" k.AsString k) }, Cmd.none
         | SelectFolder ->
+            let tokenSource = new System.Threading.CancellationTokenSource()
             model, Cmd.OfAsync.result(async {
-                let! folder = openFolder () |> Async.AwaitTask
+                let! folder = openFolder tokenSource.Token |> Async.AwaitTask
                 return SelectedFolder folder
             })
         | SelectedFolder folder ->

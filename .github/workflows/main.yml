@@ -27,10 +27,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Setup .NET 7
+      - name: Setup .NET 8
         uses: actions/setup-dotnet@v2
         with:
-          dotnet-version: 7.0.400
+          dotnet-version: 8.0.401
 
       - name: Install MAUI Workload
         run: dotnet workload install maui --ignore-failed-sources
@@ -39,13 +39,13 @@ jobs:
         run: dotnet restore src/BiodiversityCoder/BiodiversityCoder.csproj
 
       - name: Build MAUI Windows
-        run: dotnet build src/BiodiversityCoder/BiodiversityCoder.csproj -c Debug -f net7.0-windows10.0.19041.0 --no-restore
+        run: dotnet build src/BiodiversityCoder/BiodiversityCoder.csproj -c Debug -f net8.0-windows10.0.19041.0 --no-restore
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v3.1.0
         with:
           name: BiodiversityCoder-windows-ci-build
-          path: src/BiodiversityCoder/bin/Debug/net7.0-windows10.0.19041.0/win10-x64/
+          path: src/BiodiversityCoder/bin/Debug/net8.0-windows10.0.19041.0/win10-x64/
 
   # MAUI MacCatalyst Build
   build-mac:
@@ -55,10 +55,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Setup .NET 7
+      - name: Setup .NET 8
         uses: actions/setup-dotnet@v2
         with:
-          dotnet-version: 7.0.400
+          dotnet-version: 8.0.401
 
       - name: Install MAUI Workloads
         run: |
@@ -69,10 +69,10 @@ jobs:
         run: dotnet restore src/BiodiversityCoder/BiodiversityCoder.csproj
 
       - name: Build MAUI MacCatalyst
-        run: dotnet publish src/BiodiversityCoder/BiodiversityCoder.csproj -c Debug -f net7.0-maccatalyst --no-restore -p:BuildIpa=True
+        run: dotnet publish src/BiodiversityCoder/BiodiversityCoder.csproj -c Debug -f net8.0-maccatalyst --no-restore -p:BuildIpa=True
 
       - name: Upload MacCatalyst Artifact
         uses: actions/upload-artifact@v3.1.0
         with:
           name: BiodiversityCoder-macos-ci-build
-          path: src/BiodiversityCoder/bin/Debug/net7.0-maccatalyst/maccatalyst-x64/publish/*.pkg
+          path: src/BiodiversityCoder/bin/Debug/net8.0-maccatalyst/maccatalyst-x64/publish/*.pkg
