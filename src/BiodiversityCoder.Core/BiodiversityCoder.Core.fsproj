@@ -8,6 +8,7 @@
     <Compile Include="Types.fs" />
     <Compile Include="Outcomes.fs" />
     <Compile Include="Population.fs" />
+    <Compile Include="Datasets.fs" />
     <Compile Include="Exposure.fs" />
     <Compile Include="Sources.fs" />
     <Compile Include="TaxonomicBackbone.fs" />

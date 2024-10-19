@@ -93,7 +93,24 @@ type SimpleValue =
     | Time of TimeOnly
     | Boolean of bool
 
-module Parse =
+module Time =
+
+    [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+    type SimpleDateOnly = private SimpleDateOnly of System.DateOnly
+    with
+        static member TryCreate s = 
+            match s with 
+            | Text s -> 
+                let couldParse, parsedDate = System.DateOnly.TryParse s
+                if not couldParse then Error "Date not in correct format"
+                else SimpleDateOnly parsedDate |> Ok
+            | _ -> Error "The date was not in an acceptable format (e.g. 2021-09-21)"
+            |> Result.toOption
+
+        member this.Value = this |> fun (SimpleDateOnly d) -> d
+
+
+module ParseExtensions =
 
     let tryParseWith (tryParseFunc: string -> bool * _) = tryParseFunc >> function
         | true, v    -> Ok v
@@ -101,12 +118,39 @@ module Parse =
 
     let parseDouble = tryParseWith System.Double.TryParse
 
+
 module Int =
 
     let tryParse (str:string) =
         match System.Int32.TryParse str with
         | true,int -> Some int
         | _ -> None
+
+
+module Float =
+
+    let tryParse (str:string) =
+        match System.Double.TryParse str with
+        | true,float -> Some float
+        | _ -> None
+
+module List =
+
+    let flip matrix =
+        match matrix with
+        | [] -> []
+        | x :: xs ->
+            let rec loop matrix partial =
+                match matrix with
+                | [] -> partial
+                | y :: ys ->
+                    let newPartial = (y, partial) ||> List.map2 (fun x y -> x :: y)
+                    loop ys newPartial
+
+            let length = List.length x
+
+            loop matrix (List.init length (fun _ -> []))
+            |> List.map (fun x -> x |> List.rev)
 
 
 [<AutoOpen>]
@@ -188,6 +232,23 @@ module FieldDataTypes =
 
         let create (culture:CultureInfo) =
             culture.TwoLetterISOLanguageName |> LanguageCode
+
+    [<RequireQualifiedAccess>]
+    module WebAddresses =
+
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type Uri = private Uri of string
+        with
+            static member TryCreate s = 
+                match s with 
+                | Text s -> 
+                    if Uri.IsWellFormedUriString(s, System.UriKind.Absolute)
+                    then s |> Ok else Error "URI is not well-formed. You must specify a URL in absolute form (e.g. https://doi.org/...)"
+                | _ -> Error "You must specify a URL in absolute form (e.g. https://doi.org/...)"
+                |> Result.toOption
+
+            member this.Value = this |> fun (Uri d) -> d
+
 
     [<RequireQualifiedAccess>]
     module Author =
@@ -352,7 +413,7 @@ module FieldDataTypes =
             static member TryCreate s = 
                 match s with 
                 | Number s -> createLatitude s
-                | Text s -> s |> Parse.parseDouble |> Result.bind createLatitude
+                | Text s -> s |> ParseExtensions.parseDouble |> Result.bind createLatitude
                 | _ -> Error "Not a valid latitude"
                 |> Result.toOption
             member this.Value = unwrapLat this
@@ -361,7 +422,7 @@ module FieldDataTypes =
             static member TryCreate s = 
                 match s with 
                 | Number s -> createLongitude s
-                | Text s -> s |> Parse.parseDouble |> Result.bind createLongitude
+                | Text s -> s |> ParseExtensions.parseDouble |> Result.bind createLongitude
                 | _ -> Error "Not a valid longitude"
                 |> Result.toOption
             member this.Value = unwrapLon this
@@ -378,9 +439,9 @@ module FieldDataTypes =
                         then
                             coords
                             |> Array.map(fun c ->
-                                match Parse.parseDouble c.[0] |> Result.bind(fun l -> createLongitude l) with
+                                match ParseExtensions.parseDouble c.[0] |> Result.bind(fun l -> createLongitude l) with
                                 | Ok lon ->
-                                    match Parse.parseDouble c.[1] |> Result.bind(fun l -> createLatitude l) with
+                                    match ParseExtensions.parseDouble c.[1] |> Result.bind(fun l -> createLatitude l) with
                                     | Ok lat -> Ok (lat, lon)
                                     | Error e -> Error e
                                 | Error e -> Error e
@@ -421,7 +482,7 @@ module FieldDataTypes =
             static member TryCreate s = 
                 match s with 
                 | Number s -> createDepth s
-                | Text s -> s |> Parse.parseDouble |> Result.bind createDepth
+                | Text s -> s |> ParseExtensions.parseDouble |> Result.bind createDepth
                 | _ -> Error "Not a valid depth"
                 |> Result.toOption
 

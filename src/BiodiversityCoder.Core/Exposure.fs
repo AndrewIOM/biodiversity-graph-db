@@ -114,6 +114,9 @@ module Exposure =
         | HasOrphanProxy            of IndividualTimelineNode * Population.BioticProxies.BioticProxyNode
         // from individual temporal extent:
         | IsLocatedAt               of IndividualTimelineNode * Population.Context.ContextNode
+        // from individual temporal extent:
+        | HasRawData                of IndividualTimelineNode * Datasets.DatasetNode
+
 
     /// A relationship originating from an exposure node
     and ExposureRelation =
@@ -136,3 +139,4 @@ module Exposure =
         | HasProxyCategory
         | HasOrphanProxy
         | IsLocatedAt
+        | HasRawData

@@ -45,6 +45,7 @@ module App =
 
     type Page =
         | Extract
+        | AppendData
         | Sources
         | Population
         | Exposure
@@ -116,6 +117,7 @@ module App =
         AddBioticHyperedgeBatch: Map<Graph.UniqueKey, BioticHyperedgeBatch>
         ProblematicSection: string
         ProblematicSectionReason: string
+        SelectedTimeline: Graph.UniqueKey option
     }
 
     and BioticHyperedgeBatch = {
@@ -159,6 +161,7 @@ module App =
         | ToggleLeaveFilled
         | FormMessage of FormMessage
         | SelectSource of key:Graph.UniqueKey
+        | SelectTimeline of key: Graph.UniqueKey
         | LookupTaxon of LookupTaxonMessage
         | ChangeProxiedTaxonVm of timeline:Graph.UniqueKey * proxy:Graph.UniqueKey option * inference:Graph.UniqueKey option * taxon:(Graph.UniqueKey list) option * measure:Graph.UniqueKey option
         | SubmitProxiedTaxon of timeline:Graph.UniqueKey
@@ -285,10 +288,20 @@ module App =
                     | Some alreadySelected ->
                         // If re-loading the same source, don't bin all of the form entry in progress
                         if alreadySelected.SelectedSource |> fst |> fst = k
-                        then { model with SelectedSource = Some { AddBioticHyperedgeBatch = alreadySelected.AddBioticHyperedgeBatch; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
-                        else { model with SelectedSource = Some { AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
-                    | None -> { model with SelectedSource = Some { AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                        then { model with SelectedSource = Some { SelectedTimeline = None; AddBioticHyperedgeBatch = alreadySelected.AddBioticHyperedgeBatch; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                        else { model with SelectedSource = Some { SelectedTimeline = None; AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
+                    | None -> { model with SelectedSource = Some { SelectedTimeline = None; AddBioticHyperedgeBatch = Map.empty; ProposedDatabaseLink = None; ProblematicSection = ""; ProblematicSectionReason = ""; AddingNewSource = false; MarkedPrimary = Unknown; ProposedLink = None; AddBioticHyperedge = Map.empty; SelectedSource = atom; LinksToPrimarySources = None; Screening = NotEnteredYet } }, Cmd.none
                 | None -> { model with Message = Some (ErrorMessage, sprintf "Could not find source with key %s [%A]" k.AsString k) }, Cmd.none
+        | SelectTimeline k ->
+            match model.Graph with
+            | None -> { model with Message = Some (ErrorMessage, "Can't select a timeline when no graph is loaded.") }, Cmd.none
+            | Some g ->
+                match model.SelectedSource with
+                | None -> { model with Message = Some (ErrorMessage, "No source is selected.") }, Cmd.none
+                | Some source -> 
+                    match g |> Storage.atomByKey k with
+                    | Some _ -> { model with SelectedSource = Some { source with SelectedTimeline = Some k }}, Cmd.none
+                    | None -> { model with Message = Some (ErrorMessage, "Could not find timeline node in database.") }, Cmd.none
         | SelectFolder ->
             let tokenSource = new System.Threading.CancellationTokenSource()
             model, Cmd.OfAsync.result(async {
@@ -882,6 +895,26 @@ module App =
             ]
         ]
 
+    let displayDataTableSummary (digi:Datasets.DigitisedDataset) =
+        div [ _class "table-responsive" ] [
+            p [] [ text (sprintf "Digitised data from figure %s. %A (%A). [only showing top six rows]" digi.WhatWasDigitised.Name digi.Metric digi.Units) ]
+            table [ _class "table" ] [
+                thead [] [
+                    tr [] [
+                        th [] [ text "Depth" ]
+                        forEach (digi.DataTable.Morphotypes()) <| fun taxa -> th [] [ text taxa ]
+                    ]
+                ]
+                tbody [] [
+                    forEach (digi.DataTable.Depths() |> Seq.truncate 6) <| fun row ->
+                        tr [] [
+                            td [] [ textf "%f" row.Key ]
+                            forEach row.Value <| fun v -> td [] [ textf "%f" v ]
+                        ]
+                ]
+            ]
+        ]
+
     let private removeUnit (x:float<_>) = float x
 
     /// Connects a date to the pre-Holocene 'out of scope' node, for when a time series contains
@@ -1017,11 +1050,84 @@ module App =
             div [ _class "row flex-nowrap" ] [ 
                 // 1. Sidebar for selecting section
                 // Should link to editable info for core node types: population (context, proxied taxa), exposure (time), outcome (biodiversity indicators).
-                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry; Page.Statistics; Page.Settings ] dispatch
+                sidebarView [ Page.Extract; Page.Population; Page.Exposure; Page.Outcome; Page.AppendData; Page.Sources; Page.Scenario WoodRing; Page.Scenario SimpleEntry; Page.Statistics; Page.Settings ] dispatch
 
                 // 2. Page view
                 div [ _class "col" ] [
                     cond model.Page <| function
+                        | Page.AppendData ->
+                            concat [
+                                h2 [] [ text "Append / digitise datasets" ]
+                                p [] [
+                                    text "Below you may append digitised datasets to individual timelines coded into a source."
+                                    text "\nDatasets should be digitised using appropriate digitisation software and saved as a tab-delimited file."
+                                    text "\nIn the tab-delimited text file, the first column should be depth in centimetres. "
+                                ]
+
+                                cond model.SelectedSource <| function
+                                | None -> p [] [ text "Select a source in the 'extract' view first." ]
+                                | Some s -> 
+                                    cond (s.SelectedSource |> fst |> snd) <| function
+                                    | GraphStructure.Node.SourceNode sn ->
+                                        cond sn <| function
+                                        | Sources.SourceNode.Included (includedSource,_) ->
+                                            cond model.Graph <| function
+                                            | Some g -> concat [
+
+                                                concat [
+                                                    // Show existing datasets here.
+                                                    h3 [] [ text "Summary of timelines in this source" ]
+                                                    hr []
+                                                    forEach (s.SelectedSource |> GraphStructure.Relations.nodeIdsByRelation<Sources.SourceRelation> Sources.SourceRelation.HasTemporalExtent |> Storage.atomsByKey g ) <| fun timelineAtom ->
+                                                        div [ _class "card mb-4" ] [
+                                                            div [ _class "card-header text-bg-secondary" ] [ text "Timeline" ]
+                                                            div [ _class "card-body" ] [
+                                                                timelineAtomDetailsView timelineAtom g
+                                                                forEach (timelineAtom |> GraphStructure.Relations.nodeIdsByRelation<Exposure.ExposureRelation> Exposure.ExposureRelation.HasRawData |> Storage.atomsByKey g ) <| fun rawDataAtom ->
+                                                                    cond ((rawDataAtom |> fst |> snd) |> GraphStructure.Nodes.asDatasetNode) <| function
+                                                                    | Some datasetNode ->
+                                                                        cond datasetNode <| function
+                                                                        | Datasets.DatasetNode.Digitised digi ->
+                                                                            displayDataTableSummary digi
+                                                                    | None -> empty
+                                                            ]
+                                                        ]
+
+                                                    h3 [] [ text "Add a digitised dataset" ]
+                                                    hr []
+                                                    div [ _class "card mb-4" ] [
+                                                        div [ _class "card-header text-bg-secondary" ] [ text "Append a dataset to a timeline" ]
+                                                        div [ _class "card-body" ] [
+                                                            p [] [ text "Select a timeline from the selected study." ]
+                                                            select [ _class "form-select"; bind.change.string (if s.SelectedTimeline.IsSome then s.SelectedTimeline.Value.AsString else "") 
+                                                                (fun s -> s |> Graph.stringToKey |> SelectTimeline |> dispatch) ] [
+                                                                ViewGen.optionGenFiltered<Exposure.StudyTimeline.IndividualTimelineNode> (fun k -> s.SelectedSource |> snd |> List.map(fun (_,sink,_,_) -> sink) |> List.contains k) model.Graph
+                                                            ]
+                                                            cond s.SelectedTimeline <| function
+                                                            | None -> empty
+                                                            | Some timeline ->
+                                                                concat [
+                                                                    cond (Storage.atomByKey timeline g) <| function
+                                                                    | Some atom -> timelineAtomDetailsView atom g
+                                                                    | None -> text "Problem fetching timeline node"
+                                                                    ViewGen.RelationsForms.relationsToggle<Datasets.DatasetNode> "ProxyGroup" [
+                                                                        ("ProxyGroup", [
+                                                                            ViewGen.RelationsForms.selectExistingNode<Population.BioticProxies.BioticProxyCategoryNode> "Which proxy group are the morphotypes from?" "" (Datasets.DatasetRelation.IsProxyGroup |> GraphStructure.ProposedRelation.Dataset)
+                                                                        ])] model.NodeCreationRelations g (FormMessage >> dispatch)
+                                                                    ViewGen.makeNodeFormWithRelations<Datasets.DatasetNode> (fun savedRelations ->
+                                                                        ViewGen.RelationsForms.Validation.hasOne (GraphStructure.ProposedRelation.Dataset Datasets.DatasetRelation.IsProxyGroup) savedRelations)
+                                                                        (model.NodeCreationViewModels |> Map.tryFind "DatasetNode") [
+                                                                            ThisIsSink (timeline, GraphStructure.ProposedRelation.Exposure(Exposure.ExposureRelation.HasRawData))
+                                                                        ] (FormMessage >> dispatch)
+                                                                ]
+                                                        ]
+                                                    ]
+                                                ]
+                                                ]
+                                            | _ -> empty
+                                        | _ -> empty
+                                    | _ -> empty
+                            ]
                         | Page.Settings -> concat [
                                 h2 [] [ text "Settings" ]
                                 p [] [ text "Here you can change the interface's behaviour and reload the database." ]

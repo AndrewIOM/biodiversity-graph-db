@@ -24,6 +24,7 @@ module Create =
     
     open Microsoft.FSharp.Reflection
     open System.Reflection
+    open ParseExtensions
 
     type ReflectiveListBuilder = 
         static member BuildList<'a> (args: obj list) = 
@@ -147,7 +148,8 @@ module Create =
                 printfn "Creating with type %s" objType.Name
                 // Make using Create member.
                 let created = objType.InvokeMember("TryCreate", BindingFlags.InvokeMethod, null, null, [|v|])
-                bind created id
+                try bind created id
+                with | e -> failwithf "Failed on object %s" objType.Name
             | _ ->
                 printfn "Could not find create method for type %s" objType.Name
                 match v with
@@ -306,6 +308,12 @@ module ViewGen =
             genUnits field
         ]
 
+    let genTextAreaInput field existingValue rowsToShow dispatch =
+        div [ _class "input-group mb-3" ] [
+            textarea [ attr.rows rowsToShow; bind.input.string (textValue existingValue) (fun s -> Text s |> FieldValue |> dispatch); _class "form-control" ] []
+            genUnits field
+        ]
+
     let genFloatInput field existingValue dispatch =
         div [ _class "input-group mb-3" ] [
             input [ bind.input.float (numberValue existingValue) (fun s -> Number s |> FieldValue |> dispatch); _class "form-control" ]
@@ -335,6 +343,7 @@ module ViewGen =
                 | t when t = typeof<FieldDataTypes.DigitalObjectIdentifier.DigitalObjectIdentifier> -> genStringInput field existingValue 150 dispatch
                 | t when t = typeof<FieldDataTypes.IntRange.IntRange> -> genStringInput field existingValue 50 dispatch
                 | t when t = typeof<FieldDataTypes.StratigraphicSequence.Depth> -> genFloatInput field existingValue dispatch
+                | t when t = typeof<Datasets.DataTable.DataTable> -> genTextAreaInput field existingValue 20 dispatch
                 | t when t = typeof<float> -> genFloatInput field existingValue dispatch
                 | t when t = typeof<int> -> genFloatInput field existingValue dispatch
                 | t when t = typeof<bool> -> genTrueFalseToggle existingValue dispatch
@@ -611,42 +620,42 @@ module ViewGen =
         
         /// Render a toggle for different combinations of possible relations.
         let relationsToggle<'a> name (elements: (string * (string -> string -> Map<string * GraphStructure.ProposedRelation,Graph.UniqueKey list> -> Storage.FileBasedGraph<GraphStructure.Node,GraphStructure.Relation> -> (FormMessage -> unit) -> Bolero.Node) list) list) (currentRelations: Map<string,string * Map<string*GraphStructure.ProposedRelation,list<Graph.UniqueKey>>>) graph dispatch =
-                    cond (currentRelations |> Map.tryFind (typeof<'a>.Name)) <| function
-                    | Some (toggleSet, relationValues) -> concat [
-                                cond (elements.Length > 1) <| function
-                                | true ->
-                                    div [ _class "row mb-3" ] [
-                                        div [ _class "col-sm-2 col-form-label" ] [ label [] [text name ] ]
-                                        div [ _class "col-sm-10" ] [
-                                            div [ _class "btn-group" ] (elements |> List.map(fun (toggle,_) ->
-                                                cond (toggle = toggleSet) <| function
-                                                | true -> button [ _class "btn btn-outline-primary active"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                                | false -> button [ _class "btn btn-outline-primary";  on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                            ))
-                                        ]
-                                    ]
-                                | false -> empty
-                                cond (elements |> Seq.tryFind(fun (e,_) -> e = toggleSet)) <| function
-                                | Some (_,n) -> n |> List.map(fun n -> n (typeof<'a>.Name) toggleSet relationValues graph dispatch) |> concat
-                                | None -> empty
+            cond (currentRelations |> Map.tryFind (typeof<'a>.Name)) <| function
+            | Some (toggleSet, relationValues) -> concat [
+                    cond (elements.Length > 1) <| function
+                    | true ->
+                        div [ _class "row mb-3" ] [
+                            div [ _class "col-sm-2 col-form-label" ] [ label [] [text name ] ]
+                            div [ _class "col-sm-10" ] [
+                                div [ _class "btn-group" ] (elements |> List.map(fun (toggle,_) ->
+                                    cond (toggle = toggleSet) <| function
+                                    | true -> button [ _class "btn btn-outline-primary active"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                                    | false -> button [ _class "btn btn-outline-primary"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                                ))
+                            ]
                         ]
-                    | None -> 
-                        concat [
-                            cond (elements.Length > 1) <| function
-                            | true ->
-                                div [ _class "row" ] [
-                                        div [ _class "col-sm-2 col-form-label" ] [ label [] [text name ] ]
-                                        div [ _class "col-sm-10" ] [
-                                            div [ _class "btn-group"  ] (elements |> List.mapi(fun i (toggle,_) ->
-                                                    cond (i = 0) <| function
-                                                | true -> button [ _class "btn btn-outline-primary active"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                                | false -> button [ _class "btn btn-outline-primary";  on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
-                                            ))
-                                        ]
+                    | false -> empty
+                    cond (elements |> Seq.tryFind(fun (e,_) -> e = toggleSet)) <| function
+                    | Some (_,n) -> n |> List.map(fun n -> n (typeof<'a>.Name) toggleSet relationValues graph dispatch) |> concat
+                    | None -> empty
+                ]
+            | None -> 
+                concat [
+                    cond (elements.Length > 1) <| function
+                    | true ->
+                        div [ _class "row" ] [
+                                div [ _class "col-sm-2 col-form-label" ] [ label [] [text name ] ]
+                                div [ _class "col-sm-10" ] [
+                                    div [ _class "btn-group"  ] (elements |> List.mapi(fun i (toggle,_) ->
+                                            cond (i = 0) <| function
+                                        | true -> button [ _class "btn btn-outline-primary active"; on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                                        | false -> button [ _class "btn btn-outline-primary";  on.click (fun _ -> ChangeNodeRelationToggle(typeof<'a>.Name, toggle) |> dispatch) ] [ text toggle ]
+                                    ))
                                 ]
-                            | false -> empty
-                            (elements.Head |> snd) |> List.map(fun n -> n (typeof<'a>.Name) (fst elements.Head) Map.empty graph dispatch) |> concat
                         ]
+                    | false -> empty
+                    (elements.Head |> snd) |> List.map(fun n -> n (typeof<'a>.Name) (fst elements.Head) Map.empty graph dispatch) |> concat
+                ]
 
         module Validation =
 
