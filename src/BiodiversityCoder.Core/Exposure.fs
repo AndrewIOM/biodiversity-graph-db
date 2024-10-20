@@ -24,6 +24,9 @@ module Exposure =
             [<Name("Sample depth")>]
             [<Help("If a depositional record, select 'Some' to enter the depth, otherwise 'None'. Enter all depths in centimetres (cm). Typically, a band of depth (Xcm-Ycm) will be stated. However, the source may fail to state the depths of its dates, or may only present dates linked to qualitative time periods (e.g. Thule).")>]
             SampleDepth: StratigraphicSequence.DepthInCore option
+            [<Name("Lab number (optional)")>]
+            [<Help("Examples: Lu-3272; AAR-852.")>]
+            LabNumber: Text.ShortText option
             [<Name("Was this date discarded?")>]
             [<Help("Select 'No' unless (a) an age-depth model was applied AND (b) the date was provided but not used in the formation of the age-depth model (for a sediment core).")>]
             Discarded: bool
@@ -100,6 +103,7 @@ module Exposure =
         | UncertaintyOldest         of IndividualDateNode * CalYearNode
         | UncertaintyYoungest       of IndividualDateNode * CalYearNode
         | OccursWithin              of IndividualDateNode * QualitativeLabelNode
+        | OccursOutOfScope          of IndividualDateNode * QualitativeLabelOutOfScopeNode
         // from individual temporal extent:
         | ExtentEarliest            of IndividualTimelineNode * CalYearNode
         | ExtentEarliestUncertainty of IndividualTimelineNode * CalYearNode
@@ -114,6 +118,9 @@ module Exposure =
         | HasOrphanProxy            of IndividualTimelineNode * Population.BioticProxies.BioticProxyNode
         // from individual temporal extent:
         | IsLocatedAt               of IndividualTimelineNode * Population.Context.ContextNode
+        // from individual temporal extent:
+        | HasRawData                of IndividualTimelineNode * Datasets.DatasetNode
+
 
     /// A relationship originating from an exposure node
     and ExposureRelation =
@@ -123,6 +130,7 @@ module Exposure =
         | LatestTime
         | TimeEstimate                  of exact:OldDate.OldDateSimple
         | OccursWithin
+        | OccursOutOfScope
         | UncertaintyOldest             of exact:OldDate.OldDateSimple
         | UncertaintyYoungest           of exact:OldDate.OldDateSimple
         | ExtentEarliest
@@ -136,3 +144,4 @@ module Exposure =
         | HasProxyCategory
         | HasOrphanProxy
         | IsLocatedAt
+        | HasRawData

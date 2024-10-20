@@ -183,6 +183,7 @@ module GraphStructure =
         | PopulationNode of PopulationNode
         | ExposureNode of ExposureNode
         | OutcomeNode of OutcomeNode
+        | DatasetNode of Datasets.DatasetNode
 
     /// Routing type to represent all possible relations within
     /// the evidence graph.
@@ -200,11 +201,13 @@ module GraphStructure =
         | Source of SourceRelation
         | Population of PopulationRelation
         | Exposure of ExposureRelation
+        | Dataset of Datasets.DatasetRelation
 
     type ProposedRelation =
         | Source of SourceRelation
         | Population of PopulationRelation
         | Exposure of ExposureRelation
+        | Dataset of Datasets.DatasetRelation
 
     let tryAlphanum (c:char) =
         if System.Char.IsLetter c || System.Char.IsNumber c then Some c else None
@@ -237,6 +240,9 @@ module GraphStructure =
             | OutcomeNode o ->
                 match o with
                 | MeasureNode n -> "BiodiversityDimensionNode"
+            | DatasetNode d ->
+                match d with
+                | Datasets.Digitised _ -> "DigitisedDatasetNode"
 
         /// Provides a (non-unique) 'pretty' name for use in user interfaces to display
         /// the node, e.g. in a dropdown list or table.
@@ -285,6 +291,9 @@ module GraphStructure =
                 | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
                 | ContextNode n -> sprintf "%s: %s" (n.SamplingLocation.GetType().Name) n.Name.Value
                 | VernacularTaxonLabelNode(_) -> failwith "Not Implemented"
+            | DatasetNode d ->
+                match d with
+                | Datasets.Digitised n -> sprintf "Digitised dataset from %s" n.WhatWasDigitised.Name
             | SourceNode s ->
                 match s with
                 | Unscreened s
@@ -412,6 +421,9 @@ module GraphStructure =
             | ProxiedTaxonNode -> guidKey (System.Guid.NewGuid())
             | ContextNode _ -> guidKey (System.Guid.NewGuid())
             | VernacularTaxonLabelNode v -> sprintf "%s_%s" (safeString v.Language.Value) (safeString v.Label.Value) |> toLower |> friendlyKey
+        | DatasetNode d ->
+            match d with
+            | Datasets.Digitised n -> guidKey (System.Guid.NewGuid())
         | SourceNode s ->
             match s with
             | Unscreened s
@@ -520,6 +532,7 @@ module GraphStructure =
         let asExposureNode = function | ExposureNode n -> Some n | _ -> None
         let asSourceNode = function | SourceNode n -> Some n | _ -> None
         let asOutcomeNode = function | OutcomeNode n -> Some n | _ -> None
+        let asDatasetNode = function | DatasetNode n -> Some n | _ -> None
 
         let internal whereTaxon' cond = function
             | TaxonomyNode t -> if cond t then Some t else None
@@ -572,6 +585,8 @@ module GraphStructure =
                 | (t: System.Type) when t = typeof<StudyTimeline.IndividualDateNode> -> n :?> StudyTimeline.IndividualDateNode |> DateNode |> ExposureNode |> Ok
                 // Outcome node:
                 | (t: System.Type) when t = typeof<Outcomes.Biodiversity.BiodiversityDimensionNode> -> n :?> Biodiversity.BiodiversityDimensionNode |> MeasureNode |> OutcomeNode |> Ok
+                // Dataset node:
+                | (t: System.Type) when t = typeof<Datasets.DatasetNode> -> n :?> Datasets.DatasetNode |> DatasetNode |> Ok
                 | _ -> Error <| sprintf "Not a known node type (%s)" t.Name
             with | e -> Error <| sprintf "Failed to make a node: %s" e.Message
 
@@ -648,6 +663,7 @@ module GraphStructure =
                 | HasOrphanProxy -> compare source sink rel (Relation.Exposure HasOrphanProxy)
                 | IsLocatedAt -> compare source sink rel (Relation.Exposure IsLocatedAt)
                 | ConstructedWithDate -> compare source sink rel (Relation.Exposure ConstructedWithDate)
+                | HasRawData -> compare source sink rel (Relation.Exposure HasRawData)
             | Population rel ->
                 match rel with
                 | InferredFrom -> compare source sink rel (Relation.Population InferredFrom)
@@ -663,6 +679,9 @@ module GraphStructure =
                 | UsedDatabase(accessDate, subset) -> compare source sink rel (Relation.Source <| UsedDatabase(accessDate,subset))
                 | HasDataset -> compare source sink rel (Relation.Source HasDataset)
                 | IsChapterIn -> compare source sink rel (Relation.Source IsChapterIn)
+              | Dataset rel ->
+                match rel with
+                | Datasets.DatasetRelation.IsProxyGroup -> compare source sink rel (Relation.Dataset Datasets.DatasetRelation.IsProxyGroup)
 
         /// Add a node relation to the graph, validating that the relation
         /// can only occur on valid node sources / sinks in the process.
@@ -709,5 +728,9 @@ module GraphStructure =
                 | Relation.Population p ->
                     if typeof<'a> = typeof<PopulationRelation> then
                         if p = (relationCase :?> PopulationRelation) then Some sink else None
+                    else None
+                | Relation.Dataset p ->
+                    if typeof<'a> = typeof<Datasets.DatasetRelation> then
+                        if p = (relationCase :?> Datasets.DatasetRelation) then Some sink else None
                     else None
             )

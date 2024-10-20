@@ -160,6 +160,7 @@ module Scenarios =
                 let addDateUncertainties timelineNode g =
                     match vm.EarliestYearUncertainty with
                     | OldDate.MeasurementError.NoDatingErrorSpecified -> Ok g
+                    | OldDate.MeasurementError.DatingErrorPlusMinusSigma (_,error)
                     | OldDate.MeasurementError.DatingErrorPlusMinus error ->
                         let earlyEarly = NodeSelection.holoceneCalYear startDateActual + removeUnit error |> NodeSelection.trySelectTimeNodeByYear g
                         let earlyLate = NodeSelection.holoceneCalYear startDateActual - removeUnit error |> NodeSelection.trySelectTimeNodeByYear g
@@ -167,12 +168,29 @@ module Scenarios =
                         else
                             Storage.addRelationByKey g (timelineNode |> fst |> fst) earlyEarly.Value (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliestUncertainty)
                             |> Result.bind(fun g -> Storage.addRelationByKey g (timelineNode |> fst |> fst) earlyLate.Value (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliestUncertainty))
+                    | OldDate.MeasurementError.DatingErrorRangeSigma (sigma,errorOlder, errorYounger) ->
+                        let earlyEarly = NodeSelection.holoceneCalYear startDateActual + removeUnit errorOlder |> NodeSelection.trySelectTimeNodeByYear g
+                        let earlyLate = NodeSelection.holoceneCalYear startDateActual - removeUnit errorYounger |> NodeSelection.trySelectTimeNodeByYear g
+                        if earlyEarly.IsNone || earlyLate.IsNone then Error "Could not assign the uncertainty value for the earliest year."
+                        else
+                            Storage.addRelationByKey g (timelineNode |> fst |> fst) earlyEarly.Value (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliestUncertainty)
+                            |> Result.bind(fun g -> Storage.addRelationByKey g (timelineNode |> fst |> fst) earlyLate.Value (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliestUncertainty))
+
+                
                 let addDateUncertaintiesLate timelineNode g =
                     match vm.LatestYearUncertainty with
                     | OldDate.MeasurementError.NoDatingErrorSpecified -> Ok g
+                    | OldDate.MeasurementError.DatingErrorPlusMinusSigma (_,error)
                     | OldDate.MeasurementError.DatingErrorPlusMinus error ->
                         let lateEarly = NodeSelection.holoceneCalYear endDateActual + removeUnit error |> NodeSelection.trySelectTimeNodeByYear g
                         let lateLate = NodeSelection.holoceneCalYear endDateActual - removeUnit error |> NodeSelection.trySelectTimeNodeByYear g
+                        if lateEarly.IsNone || lateLate.IsNone then Error "Could not assign the uncertainty value for the earliest year."
+                        else
+                            Storage.addRelationByKey g (timelineNode |> fst |> fst) lateEarly.Value (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatestUncertainty)
+                            |> Result.bind(fun g -> Storage.addRelationByKey g (timelineNode |> fst |> fst) lateLate.Value (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatestUncertainty))
+                    | OldDate.MeasurementError.DatingErrorRangeSigma (sigma,errorOlder, errorYounger) ->
+                        let lateEarly = NodeSelection.holoceneCalYear endDateActual + removeUnit errorOlder |> NodeSelection.trySelectTimeNodeByYear g
+                        let lateLate = NodeSelection.holoceneCalYear endDateActual - removeUnit errorYounger |> NodeSelection.trySelectTimeNodeByYear g
                         if lateEarly.IsNone || lateLate.IsNone then Error "Could not assign the uncertainty value for the earliest year."
                         else
                             Storage.addRelationByKey g (timelineNode |> fst |> fst) lateEarly.Value (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatestUncertainty)
@@ -218,6 +236,7 @@ module Scenarios =
                     Date = OldDate.OldDatingMethod.CollectionDate <| vm.CollectionDate
                     MaterialDated = Text.createShort "wood increment" |> Result.forceOk
                     SampleDepth = None
+                    LabNumber = None
                     Discarded = false
                     MeasurementError = OldDate.MeasurementError.NoDatingErrorSpecified
                 }
