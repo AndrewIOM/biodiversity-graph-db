@@ -899,19 +899,22 @@ module App =
         div [ _class "table-responsive" ] [
             p [] [ text (sprintf "Digitised data from figure %s. %A (%A). [only showing top six rows]" digi.WhatWasDigitised.Name digi.Metric digi.Units) ]
             table [ _class "table" ] [
-                thead [] [
-                    tr [] [
-                        th [] [ text "Depth" ]
-                        forEach (digi.DataTable.Morphotypes()) <| fun taxa -> th [] [ text taxa ]
-                    ]
-                ]
-                tbody [] [
-                    forEach (digi.DataTable.Depths() |> Seq.truncate 6) <| fun row ->
+                cond (Some <| digi.DataTable.Depths()) <| function
+                | Some (indexUnit, rows) -> concat [
+                    thead [] [
                         tr [] [
-                            td [] [ textf "%f" row.Key ]
-                            forEach row.Value <| fun v -> td [] [ textf "%f" v ]
+                            th [] [ textf "%A" indexUnit ]
+                            forEach (digi.DataTable.Morphotypes()) <| fun taxa -> th [] [ text taxa ]
                         ]
-                ]
+                    ]
+                    tbody [] [
+                        forEach (rows |> Seq.truncate 6) <| fun row ->
+                            tr [] [
+                                td [] [ textf "%f" row.Key ]
+                                forEach row.Value <| fun v -> td [] [ textf "%f" v ]
+                            ]
+                    ]]
+                | None -> empty
             ]
         ]
 
@@ -1061,7 +1064,7 @@ module App =
                                 p [] [
                                     text "Below you may append digitised datasets to individual timelines coded into a source."
                                     text "\nDatasets should be digitised using appropriate digitisation software and saved as a tab-delimited file."
-                                    text "\nIn the tab-delimited text file, the first column should be depth in centimetres. "
+                                    text "\nIn the tab-delimited text file, the first column should be either (1) depth in centimetres, or (2) 'bp', 'cal yr bp', 'ad', or 'bc' if the data is age-indexed only and no depths are available."
                                 ]
 
                                 cond model.SelectedSource <| function
@@ -1650,8 +1653,11 @@ module App =
                                                                                             ])
                                                                                             ("Absolute", [
                                                                                                 ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Estimated date (as stated by the authors)" "You may select a date in one of three units: BP, cal yr BP, or AD/BC (calendar year)." (Exposure.ExposureRelation.TimeEstimate >> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
-                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: earliest date (as stated by the authors)" "Optional. If an uncertainty range has been given for the date, enter the earliest stated date here." (Exposure.ExposureRelation.UncertaintyOldest >> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
-                                                                                                ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: latest date (as stated by the authors)" "Optional. Enter the latest stated date here." (Exposure.ExposureRelation.UncertaintyYoungest >> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                // ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: earliest date (as stated by the authors)" "Optional. If an uncertainty range has been given for the date, enter the earliest stated date here." (Exposure.ExposureRelation.UncertaintyOldest >> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                                // ViewGen.RelationsForms.selectExistingBy<Exposure.TemporalIndex.CalYearNode, FieldDataTypes.OldDate.OldDateSimple> "Uncertainty: latest date (as stated by the authors)" "Optional. Enter the latest stated date here." (Exposure.ExposureRelation.UncertaintyYoungest >> GraphStructure.ProposedRelation.Exposure) (NodeSelection.trySelectTimeNode g) model.RelationCreationViewModels
+                                                                                            ])
+                                                                                            ("Pre-Holocene", [
+                                                                                                ViewGen.RelationsForms.selectExistingNode<Exposure.TemporalIndex.QualitativeLabelOutOfScopeNode> "Intersects this time period" "Use if the dating method indicates a connection to a qualitative period. Example: peat deposit occurs within a locally-defined pollen zone." (Exposure.ExposureRelation.OccursOutOfScope |> GraphStructure.ProposedRelation.Exposure)
                                                                                             ])
                                                                                         ] model.NodeCreationRelations g (FormMessage >> dispatch)
                                                                                         ViewGen.makeNodeFormWithRelations<Exposure.StudyTimeline.IndividualDateNode> (fun savedRelations ->

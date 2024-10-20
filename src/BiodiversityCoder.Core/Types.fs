@@ -521,10 +521,17 @@ module FieldDataTypes =
         type MeasurementError =
             | NoDatingErrorSpecified
             | DatingErrorPlusMinus of measurementError:float<calYearBP>
+            | DatingErrorPlusMinusSigma of sigma: Sigma * measurementError:float<calYearBP>
+            | DatingErrorRangeSigma of sigma: Sigma * errorOlder:float<calYearBP> * errorYounger:float<calYearBP>
+        
+        and Sigma =
+            | OneSigma
+            | TwoSigma
 
         type OldDatingMethod =
             | RadiocarbonUncalibrated of uncalibratedDate:float<uncalYearBP>
             | RadiocarbonCalibrated of calibratedDate:CalibratedRadiocarbonDate
+            | RadiocarbonUncalibratedConventional of uncalibratedDate:float<uncalYearBP>
             | Tephra of tephraName:Text.ShortText * date:OldDate
             | HistoricEvent of eventName:Text.ShortText * date:OldDate
             | Lead210 of concentration:float * date:OldDate

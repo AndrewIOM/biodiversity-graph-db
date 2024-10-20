@@ -10,8 +10,19 @@ module Datasets =
 
         open Newtonsoft.Json
 
+        type IndexUnit =
+            | Depths
+            | Ages of AgeUnit
+
+        and AgeUnit =
+            | BP
+            | CalYrBP
+            | HistoryYearAD
+            | HistoryYearBC
+
         type DataTable2D = {
-            Depths: float list
+            Index: float list
+            IndexUnit: IndexUnit
             Morphotypes: string list
             Data: float[,]
         }
@@ -20,6 +31,17 @@ module Datasets =
         type DataTable = private DataTable of DataTable2D
 
         let unwrap (DataTable table) = table
+
+        let indexColumnType (str:string) =
+            match str.ToLower() with
+            | "depth" -> Depths |> Some
+            | "year before present"
+            | "bp" -> Ages BP |> Some
+            | "calendar year before present"
+            | "cal yr bp" -> Ages CalYrBP |> Some
+            | "ad" -> Ages HistoryYearAD |> Some
+            | "bc" -> Ages HistoryYearBC |> Some
+            | _ -> None
 
         /// Parse a tab-delimited string to a data table
         let createDataTable (str:string) =
@@ -31,8 +53,10 @@ module Datasets =
                 then Error "Each row must have at least two columns, and all rows must have the same number of columns"
                 else
                     let headRow = (rows |> Seq.head).Split('\t')
-                    let depthCol = headRow.[0]
+                    let indexCol = headRow.[0]
                     let morphotypeCols = headRow |> Array.skip 1
+
+                    let indexType = indexColumnType indexCol
 
                     let depths = rows |> Array.choose(fun r -> r.Split("\t").[0] |> Float.tryParse) |> Array.toList
 
@@ -49,23 +73,24 @@ module Datasets =
                     then Error "Data in each row was of different lengths. Check data structure."
                     else
                         if
-                            depthCol.ToLower() <> "depth" ||
+                            indexType.IsNone ||
                             morphotypeCols.Length <> dataRowLengths.[0]
-                        then Error "Problem with data format. Check first column is named 'depth' and each taxon column is complete."
+                        then Error "Problem with data format. Check first column is named 'depth' or an age unit, and each taxon column is complete."
                         else
                             {
-                                Depths = depths
+                                IndexUnit = indexType.Value
+                                Index = depths
                                 Morphotypes = morphotypeCols |> Array.toList
                                 Data = array2D data
                             } |> DataTable |> Ok
 
         let isValid table =
             let table = unwrap table
-            table.Data.GetLength(0) = table.Depths.Length &&
+            table.Data.GetLength(0) = table.Index.Length &&
                 table.Data.GetLength(1) = table.Morphotypes.Length
 
         let depths table =
-            (unwrap table).Depths
+            (unwrap table).Index
             |> List.mapi(fun i d -> d, (unwrap table).Data.[i,*] )
             |> Map.ofList
 
@@ -77,7 +102,7 @@ module Datasets =
                 |> Result.toOption
 
             member this.IsValid = isValid this
-            member this.Depths () = depths this
+            member this.Depths () = (unwrap this).IndexUnit, depths this
             member this.Morphotypes () = (unwrap this).Morphotypes
 
 
@@ -130,7 +155,7 @@ module Datasets =
         [<Help("When was the source digitised? Use the format 2024-10-24")>]
         DigitisedOn: Time.SimpleDateOnly
         [<Name("Data table (raw data)")>]
-        [<Help("Paste a tab-delimited dataset into this box. The data must be in wide format, with the first column named 'depth' and subsequent columns named as the morphotypes in the dataset. The first column should contain depth values in centimetres, and subsequent columns numerical values of the metric in the units as previously specified.")>]
+        [<Help("Paste a tab-delimited dataset into this box. The data must be in wide format, with the first column named 'depth' (or an appropriate age unit if age-indexed) and subsequent columns named as the morphotypes in the dataset. The first column should contain depth values in centimetres, and subsequent columns numerical values of the metric in the units as previously specified.")>]
         DataTable: DataTable.DataTable
     }
 
