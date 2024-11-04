@@ -169,8 +169,10 @@ module Exposure =
         | UncertaintyOldest             of exact:OldDate.OldDateSimple
         | UncertaintyYoungest           of exact:OldDate.OldDateSimple
         | ExtentEarliest
+        | ExtentEarliestSpecified       of exact:OldDate.OldDateSimple option
         | ExtentEarliestUncertainty
         | ExtentEarliestOutOfScope      of exact:OldDate.OldDateSimple
+        | ExtentLatestSpecified         of exact:OldDate.OldDateSimple option
         | ExtentLatest
         | ExtentLatestUncertainty
         | IntersectsTime
