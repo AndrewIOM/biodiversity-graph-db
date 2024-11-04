@@ -79,6 +79,32 @@ module Exposure =
             DesignatingAuthority: Text.ShortText
         }
     
+    module Reanalysis =
+
+        /// Represents a process to calibrate dates for one or many
+        /// dates. For sedimentary sequences, many dates may be used
+        /// within the calibration and also produce an age-depth model.
+        type DateCalibrationNode = {
+            CalibrationCurve: Text.ShortText
+            ModelApplied: CalibrationModel
+            SoftwareName: Text.ShortText
+            SoftwareVersion: Text.ShortText
+            Origin: OldDate.Harmonised.DateCalibrationOrigin
+            AgeDepthModel: AgeDepthModelDepth list option
+        }
+
+        and AgeDepthModelDepth = {
+            Depth: float<StratigraphicSequence.cm>
+            Date: float<OldDate.calYearBP>
+            StandardDeviation: float<OldDate.calYearBP> option
+        }
+
+        and CalibrationModel =
+            | Unmodelled
+            | OxCalModel of oxCalScript: Text.Text
+            | OtherModel of description:Text.Text
+
+
     /// The master node type for 'exposure' peco element.
     type ExposureNode =
         | YearNode of TemporalIndex.CalYearNode
@@ -86,6 +112,7 @@ module Exposure =
         | OutOfScopeNode of TemporalIndex.QualitativeLabelOutOfScopeNode
         | TimelineNode of StudyTimeline.IndividualTimelineNode
         | DateNode of StudyTimeline.IndividualDateNode
+        | DateCalibrationInstanceNode of Reanalysis.DateCalibrationNode
 
     open TemporalIndex
     open StudyTimeline
@@ -104,6 +131,9 @@ module Exposure =
         | UncertaintyYoungest       of IndividualDateNode * CalYearNode
         | OccursWithin              of IndividualDateNode * QualitativeLabelNode
         | OccursOutOfScope          of IndividualDateNode * QualitativeLabelOutOfScopeNode
+        | UsedInCalibration         of IndividualDateNode * Reanalysis.DateCalibrationNode
+        // from calibration
+        | Calibrated                of Reanalysis.DateCalibrationNode * IndividualDateNode
         // from individual temporal extent:
         | ExtentEarliest            of IndividualTimelineNode * CalYearNode
         | ExtentEarliestUncertainty of IndividualTimelineNode * CalYearNode
@@ -120,6 +150,9 @@ module Exposure =
         | IsLocatedAt               of IndividualTimelineNode * Population.Context.ContextNode
         // from individual temporal extent:
         | HasRawData                of IndividualTimelineNode * Datasets.DatasetNode
+        // from individual temporal extent:
+        | ExtentEarliestHarmonised  of IndividualTimelineNode * CalYearNode
+        | ExtentLatestHarmonised    of IndividualTimelineNode * CalYearNode
 
 
     /// A relationship originating from an exposure node
@@ -131,6 +164,8 @@ module Exposure =
         | TimeEstimate                  of exact:OldDate.OldDateSimple
         | OccursWithin
         | OccursOutOfScope
+        | UsedInCalibration
+        | Calibrated                    of calibration:OldDate.Harmonised.DateCalibration
         | UncertaintyOldest             of exact:OldDate.OldDateSimple
         | UncertaintyYoungest           of exact:OldDate.OldDateSimple
         | ExtentEarliest
@@ -145,3 +180,5 @@ module Exposure =
         | HasOrphanProxy
         | IsLocatedAt
         | HasRawData
+        | ExtentEarliestHarmonised      of exact:OldDate.Harmonised.OldDateSimpleHarmonised
+        | ExtentLatestHarmonised        of exact:OldDate.Harmonised.OldDateSimpleHarmonised

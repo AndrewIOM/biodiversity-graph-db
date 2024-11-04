@@ -237,6 +237,7 @@ module GraphStructure =
                 | TimelineNode _ -> "IndividualTimelineNode"
                 | DateNode _ -> "IndividualDateNode"
                 | OutOfScopeNode _ -> "QualitativeLabelOutOfScopeNode"
+                | DateCalibrationInstanceNode _ -> "DateCalibrationInstanceNode"
             | OutcomeNode o ->
                 match o with
                 | MeasureNode n -> "BiodiversityDimensionNode"
@@ -352,6 +353,7 @@ module GraphStructure =
                 | TimelineNode n -> "A study timeline"
                 | DateNode n -> "An individual date"
                 | OutOfScopeNode n -> sprintf "%s (designated by: %s)" n.Name.Value n.DesignatingAuthority.Value
+                | DateCalibrationInstanceNode _ -> "Recalibration of one to many radiocarbon dates"
             | OutcomeNode o ->
                 match o with
                 | MeasureNode n -> n.ToString()
@@ -511,6 +513,7 @@ module GraphStructure =
             | TimelineNode _ -> guidKey (System.Guid.NewGuid())
             | DateNode _ -> guidKey (System.Guid.NewGuid())
             | OutOfScopeNode n -> sprintf "%s_by_%s" (safeString n.Name.Value) (safeString n.DesignatingAuthority.Value) |> toLower |> friendlyKey
+            | DateCalibrationInstanceNode _ -> guidKey (System.Guid.NewGuid())
         | OutcomeNode o ->
             match o with
             | MeasureNode n ->
@@ -664,6 +667,11 @@ module GraphStructure =
                 | IsLocatedAt -> compare source sink rel (Relation.Exposure IsLocatedAt)
                 | ConstructedWithDate -> compare source sink rel (Relation.Exposure ConstructedWithDate)
                 | HasRawData -> compare source sink rel (Relation.Exposure HasRawData)
+                | OccursOutOfScope -> compare source sink rel (Relation.Exposure OccursOutOfScope)
+                | UsedInCalibration -> compare source sink rel (Relation.Exposure UsedInCalibration)
+                | Calibrated c -> compare source sink rel (Relation.Exposure <| Calibrated c)
+                | ExtentEarliestHarmonised exact -> compare source sink rel (Relation.Exposure <| ExtentEarliestHarmonised exact)
+                | ExtentLatestHarmonised exact -> compare source sink rel (Relation.Exposure <| ExtentLatestHarmonised exact)
             | Population rel ->
                 match rel with
                 | InferredFrom -> compare source sink rel (Relation.Population InferredFrom)
