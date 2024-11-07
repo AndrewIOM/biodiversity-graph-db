@@ -293,8 +293,8 @@ module Storage =
     /// Add a relationship between two nodes.
     let addRelationByKey (fileGraph:FileBasedGraph<GraphStructure.Node, GraphStructure.Relation>) (source:Graph.UniqueKey) (sink:Graph.UniqueKey) relation =
         result {
-            let! sourceAtom = atomByKey source fileGraph |> Result.ofOption "Source node did not exist"
-            let! sinkAtom = atomByKey sink fileGraph |> Result.ofOption "Sink node did not exist"
+            let! sourceAtom = atomByKey source fileGraph |> Result.ofOption (sprintf "Source node did not exist: %s" source.AsString)
+            let! sinkAtom = atomByKey sink fileGraph |> Result.ofOption (sprintf "Sink node did not exist: %s" sink.AsString)
             let! updatedGraph = GraphStructure.Relations.addRelation sourceAtom sinkAtom relation 1 (unwrap fileGraph).Graph
             let! updatedSourceAtom = updatedGraph |> Graph.getAtom (sourceAtom |> fst |> fst) |> Result.ofOption (sprintf "Could not find atom: %O" (sourceAtom |> fst |> fst))
             return! updateNode' updatedGraph updatedSourceAtom fileGraph

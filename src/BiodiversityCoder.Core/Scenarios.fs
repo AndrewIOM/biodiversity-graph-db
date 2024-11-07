@@ -148,7 +148,7 @@ module Scenarios =
                     |> Option.bind(fun (k: Graph.UniqueKey,v,outOfScope) -> 
                         Storage.atomByKey k graph
                         |> Option.map(fun n ->
-                            if outOfScope then n, Exposure.ExposureRelation.ExtentEarliestOutOfScope v, v else n, Exposure.ExposureRelation.ExtentEarliest, v))
+                            if outOfScope then n, Exposure.ExposureRelation.ExtentEarliestOutOfScope v, v else n, Exposure.ExposureRelation.ExtentEarliestSpecified (Some v), v))
                     |> Result.ofOption "Earliest year could not be connected to the internal time series."
                 let! endDateNode, endDateActual = 
                     NodeSelection.trySelectTimeNode graph vm.LatestYear
@@ -207,7 +207,7 @@ module Scenarios =
                         let contextNode = addedNodes |> Seq.find(fun s -> (s |> fst |> snd).NodeType() = "ContextNode")
                         Storage.addRelation sourceNode timelineNode (ProposedRelation.Source Sources.SourceRelation.HasTemporalExtent) g
                         |> Result.bind(fun g -> Storage.addRelation timelineNode startDateNode (ProposedRelation.Exposure startDateRel) g )
-                        |> Result.bind(fun g -> Storage.addRelation timelineNode endDateNode (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatest) g )
+                        |> Result.bind(fun g -> Storage.addRelation timelineNode endDateNode (Exposure.ExposureRelation.ExtentLatestSpecified (Some endDateActual) |> ProposedRelation.Exposure) g )
                         |> Result.bind(fun g -> addDateUncertainties timelineNode g)
                         |> Result.bind(fun g -> addDateUncertaintiesLate timelineNode g)
                         |> Result.bind(fun g -> Storage.addRelation timelineNode contextNode (ProposedRelation.Exposure Exposure.ExposureRelation.IsLocatedAt) g )
@@ -287,8 +287,8 @@ module Scenarios =
                         let contextNode = addedNodes |> Seq.find(fun s -> (s |> fst |> snd).NodeType() = "ContextNode")
                         
                         Storage.addRelation sourceNode timelineNode (ProposedRelation.Source Sources.SourceRelation.HasTemporalExtent) g
-                        |> Result.bind(fun g -> Storage.addRelation timelineNode startDateNode (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentEarliest) g )
-                        |> Result.bind(fun g -> Storage.addRelation timelineNode endDateNode (ProposedRelation.Exposure Exposure.ExposureRelation.ExtentLatest) g )
+                        |> Result.bind(fun g -> Storage.addRelation timelineNode startDateNode (ProposedRelation.Exposure <| Exposure.ExposureRelation.ExtentEarliestSpecified (Some <| OldDate.OldDateSimple.HistoryYearAD vm.EarliestYear)) g )
+                        |> Result.bind(fun g -> Storage.addRelation timelineNode endDateNode (ProposedRelation.Exposure <| Exposure.ExposureRelation.ExtentLatestSpecified (Some <| OldDate.OldDateSimple.HistoryYearAD vm.LatestYear)) g )
                         |> Result.bind(fun g -> Storage.addRelation dateNode collectionDateNode (ProposedRelation.Exposure <| Exposure.ExposureRelation.TimeEstimate (OldDate.OldDateSimple.HistoryYearAD ((float vm.CollectionDate) * 1.<OldDate.AD>))) g )
                         |> Result.bind(fun g -> Storage.addRelation timelineNode dateNode (ProposedRelation.Exposure Exposure.ExposureRelation.ConstructedWithDate) g )
                         |> Result.bind(fun g -> Storage.addRelation timelineNode contextNode (ProposedRelation.Exposure Exposure.ExposureRelation.IsLocatedAt) g )

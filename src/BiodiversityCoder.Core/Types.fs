@@ -361,6 +361,29 @@ module FieldDataTypes =
             member this.Value = unwrap this
 
     [<RequireQualifiedAccess>]
+    module Percent =
+
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type Percent = private Percent of float
+
+        let create percent =
+            if percent >= 0.0 && percent <= 1.0
+            then Percent (percent * 100.) |> Ok
+            else Error "Percent must be between 0 and 100"
+
+        let private unwrap (Percent p) = p
+
+        type Percent with 
+            static member TryCreate s = 
+                match s with 
+                | Number p -> p |> create
+                | Text p -> p |> Float.tryParse |> Result.ofOption "Not a vaild percent" |> Result.bind create
+                | _ -> Error "Not a valid percent."
+                |> Result.toOption
+            member this.Value = unwrap this
+
+
+    [<RequireQualifiedAccess>]
     module Geography =
 
         /// Decimal degrees
@@ -527,9 +550,11 @@ module FieldDataTypes =
         and Sigma =
             | OneSigma
             | TwoSigma
+            | ThreeSigma
 
         type OldDatingMethod =
             | RadiocarbonUncalibrated of uncalibratedDate:float<uncalYearBP>
+            | RadiocarbonCalibratedRanges of calibratedDate:CalibratedRadiocarbonDateRanges
             | RadiocarbonCalibrated of calibratedDate:CalibratedRadiocarbonDate
             | RadiocarbonUncalibratedConventional of uncalibratedDate:float<uncalYearBP>
             | Tephra of tephraName:Text.ShortText * date:OldDate
@@ -566,10 +591,65 @@ module FieldDataTypes =
             UncalibratedDateError: MeasurementError
         }
 
+        and CalibratedRadiocarbonDateRanges = {
+            [<Name("Calibrated date range(s)")>]
+            [<Help("For dates expressed as a range (XXXX - XXXX) based on a confidence level. Enter the date in units 'cal yr BP'. If the source uses BCE or similar, convert the date manually to 'cal yr BP' for this field.")>]
+            CalibratedDate: CalibratedDateRange list
+            [<Name("Calibration curve or method")>]
+            [<Help("If a calibration curve was used (e.g. IntCal98), enter its name here. Alternatively, older papers may reference specific sources for a calibration method (e.g. Clark 1975). Enter the author and year here in this format: A, B and X 1986.")>]
+            CalibrationCurve: Text.ShortText
+            [<Name("Uncalibrated date")>]
+            [<Help("Does the source include the raw (uncalibrated) radiocarbon date?")>]
+            UncalibratedDate: UncalDate option
+        }
+
+        and CalibratedDateRange = {
+            Sigma: Sigma
+            EarlierBound: float<calYearBP>
+            LaterBound: float<calYearBP>
+        }
+
+        /// Contains types that are used only when harmonising dates
+        /// within the reanalysis phase of the project.
+        /// IndividualDate --[Many-1]--> [UsedInCalibration] Calibration 
+        /// --[1-Many]--> [CalibratedAs(CalibratedDate)] IndividualDate
+        module Harmonised =
+
+            type DateCalibration = {
+                CalibrationCurve: Text.ShortText
+                InputDate: float<uncalYearBP>
+                InputStandardDeviation: float<uncalYearBP> option
+                DateRanges: DateRangeFromCalibration list
+                SoftwareUsed: Text.ShortText
+                Origin: DateCalibrationOrigin
+                HasWarnings: (Text.Text list) option
+            }
+
+            and DateRangeFromCalibration = {
+                Sigma: Sigma
+                Probability: Percent.Percent
+                EarlierBound: float<calYearBP>
+                LaterBound: float<calYearBP>
+            }
+
+            and DateCalibrationOrigin =
+                | FromOriginalWork
+                | PartOfReanalysis of conductedBy:Author.Author * date:Time.SimpleDateOnly
+
+            /// In the reanalysis, we harmonise dates such that all dates are
+            /// calibrated using the most recent calibration curve, or are
+            /// simply historical dates.
+            type OldDateSimpleHarmonised =
+                | CalibratedYearsBP of DateCalibration
+                | HistoryYearAD of calendarYear:float<AD>
+                | HistoryYearBC of calendarYear:float<BC>
+
+
         /// This simple date representation is used on the relations between
         /// a date node and the cal yr BP time series. This helps us keep track
         /// of how each temporal extent relates to the harmonised (calibrated years)
-        /// master time series.
+        /// master time series. Note: this is the 'best guess' from original coded
+        /// sources, rather than based on recalibration of any dates.
         type OldDateSimple =
             | BP of bpDate:float<uncalYearBP>
             | CalYrBP of calibratedDate:float<calYearBP> * calibrationTechnique:Text.ShortText option

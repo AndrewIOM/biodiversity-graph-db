@@ -128,6 +128,7 @@ module ``When converting a view model to an instance`` =
                 SampleDepth = StratigraphicSequence.createDepth 20. |> Result.map StratigraphicSequence.DepthInCore.DepthPoint |> Result.forceOk |> Some
                 Discarded = false
                 MeasurementError = OldDate.NoDatingErrorSpecified
+                LabNumber = None
             }
             Assert.Equal(expected, r :?> IndividualDateNode)
         | Error e -> Assert.True(false, e)
