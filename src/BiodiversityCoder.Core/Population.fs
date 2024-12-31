@@ -64,7 +64,7 @@ module Population =
             [<Help("The system that has been used for taxonomic names.")>]
             Nomleclature: Text.ShortText
             Entries: TaxonLookupItem list
-            Reference: Text.ShortText
+            Reference: Text.Text
         }
 
         and TaxonLookupItem = {
