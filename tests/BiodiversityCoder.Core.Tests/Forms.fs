@@ -38,7 +38,7 @@ module ``When converting a view model to an instance`` =
             DU("Family", Fields([ "name", FieldValue(Text "Betula") ] |> Map.ofList))
             |> createFromViewModel (typeof<TaxonNode>)
         match vm with
-        | Ok r -> Assert.Equal(Family((Text.ShortText.TryCreate(SimpleValue.Text "Betula").Value)), r :?> TaxonNode)
+        | Ok r -> Assert.Equal(Population.Taxonomy.Family((Text.ShortText.TryCreate(SimpleValue.Text "Betula").Value)), r :?> TaxonNode)
         | Error e -> Assert.True(false, e)
     
     [<Fact>]
@@ -51,7 +51,7 @@ module ``When converting a view model to an instance`` =
                 "authorship", FieldValue(Text "L.") ] |> Map.ofList))
             |> createFromViewModel (typeof<TaxonNode>)
         match vm with
-        | Ok r -> Assert.Equal(Subspecies(
+        | Ok r -> Assert.Equal(Population.Taxonomy.Subspecies(
             (Text.ShortText.TryCreate(SimpleValue.Text "Betula").Value),
             (Text.ShortText.TryCreate(SimpleValue.Text "pendula").Value),
             (Text.ShortText.TryCreate(SimpleValue.Text "mandshurica").Value),

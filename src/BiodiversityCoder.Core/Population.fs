@@ -51,11 +51,42 @@ module Population =
 
         open FieldDataTypes
 
+        type IdentificationConfidence =
+            | Reliability of ReliabilityConfidence
+            | Unspecified
+
+        and ReliabilityConfidence =
+            | Unreliable
+            | FairlyReliable
+            | FullyReliable
+
+        type TaxonLookup = {
+            [<Help("The system that has been used for taxonomic names.")>]
+            Nomleclature: Text.ShortText
+            Entries: TaxonLookupItem list
+            Reference: Text.ShortText
+        }
+
+        and TaxonLookupItem = {
+            MorphotypeName: Text.ShortText
+            TaxonName: Text.ShortText
+            Rank: Rank
+            Confidence: IdentificationConfidence
+        }
+
+        and Rank =
+            | Family
+            | Genus
+            | Species
+            | Subspecies
+            | Variety
+
         /// The method through which a biotic proxy was inferred to
         /// be a particular taxon. For example, for microfossils it
         /// is common to use a particular regional atlas.
         type InferenceMethodNode =
             | IdentificationKeyOrAtlas of reference:Text.Text
+            | IdentificationKeyOrAtlasWithLookup of lookup:TaxonLookup
             | Implicit
             | ImplicitByExpert of lastName:Text.ShortText * initials:Text.ShortText
 

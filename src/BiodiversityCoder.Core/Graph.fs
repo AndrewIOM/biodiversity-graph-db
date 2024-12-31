@@ -288,6 +288,7 @@ module GraphStructure =
                     match n with
                     | BioticProxies.InferenceMethodNode.Implicit -> "Implicit"
                     | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "Explicit: Atlas or Key - %s" r.Value
+                    | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlasWithLookup r -> sprintf "Explicit: Atlas or Key - %s" r.Reference.Value
                     | BioticProxies.InferenceMethodNode.ImplicitByExpert (lastName, initials) -> sprintf "Implicit: Expert ID - %s, %s" lastName.Value initials.Value
                 | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
                 | ContextNode n -> sprintf "%s: %s" (n.SamplingLocation.GetType().Name) n.Name.Value
@@ -419,6 +420,7 @@ module GraphStructure =
                 match n with
                 | BioticProxies.InferenceMethodNode.Implicit -> "Implicit" |> toLower |> friendlyKey
                 | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" ((r.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString) |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlasWithLookup r -> sprintf "atlas_lookup_%s" ((r.Reference.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString) |> toLower |> friendlyKey
                 | BioticProxies.InferenceMethodNode.ImplicitByExpert (l,i) -> sprintf "expert_%s_%s" (safeString l.Value) (safeString i.Value) |> toLower |> friendlyKey
             | ProxiedTaxonNode -> guidKey (System.Guid.NewGuid())
             | ContextNode _ -> guidKey (System.Guid.NewGuid())
