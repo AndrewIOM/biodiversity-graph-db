@@ -69,17 +69,9 @@ module Population =
 
         and TaxonLookupItem = {
             MorphotypeName: Text.ShortText
-            TaxonName: Text.ShortText
-            Rank: Rank
+            Taxa: Taxonomy.TaxonNode list
             Confidence: IdentificationConfidence
         }
-
-        and Rank =
-            | Family
-            | Genus
-            | Species
-            | Subspecies
-            | Variety
 
         /// The method through which a biotic proxy was inferred to
         /// be a particular taxon. For example, for microfossils it
