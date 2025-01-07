@@ -44,6 +44,11 @@ module Population =
             Source: Text.Text
         }
 
+        /// Represents a database 
+        type NomenclatureIndexNode = {
+            Name: Text.ShortText
+        }
+
 
     /// Biotic proxies occur where a biotic component is used to infer
     /// an actual taxon (for example, pollen
@@ -158,6 +163,8 @@ module Population =
     type PopulationNodeRelation =
         // From taxonomy node:
         | IsA               of Taxonomy.TaxonNode * Taxonomy.TaxonNode
+        | IsSynonymOf       of Taxonomy.TaxonNode * Taxonomy.TaxonNode
+        | HasIdentifier     of Taxonomy.TaxonNode * Taxonomy.NomenclatureIndexNode
         | HasLabel          of Taxonomy.TaxonNode * Taxonomy.VernacularTaxonLabelNode
         // Links from hyper-edge:
         | InferredFrom      of ProxiedTaxon.ProxiedTaxonHyperEdge * BioticProxies.BioticProxyNode
@@ -168,6 +175,8 @@ module Population =
     /// A relationship originating from a population node
     and PopulationRelation =
         | IsA
+        | IsSynonymOf of opinionMadeBySource:FieldDataTypes.Text.ShortText * dateMade:Time.SimpleDateOnly
+        | HasIdentifier of checklistId:FieldDataTypes.Text.ShortText
         | HasLabel
         | InferredFrom
         | InferredUsing

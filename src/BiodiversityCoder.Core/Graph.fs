@@ -166,6 +166,7 @@ module GraphStructure =
 
     type PopulationNode =
         | TaxonomyNode of Taxonomy.TaxonNode
+        | TaxonomicNamesIndexNode of Taxonomy.NomenclatureIndexNode
         | BioticProxyNode of BioticProxies.BioticProxyNode
         | BioticProxyCategoryNode of BioticProxies.BioticProxyCategoryNode
         | InferenceMethodNode of BioticProxies.InferenceMethodNode
@@ -221,6 +222,7 @@ module GraphStructure =
                 | BioticProxyNode n -> "BioticProxyNode"
                 | BioticProxyCategoryNode n -> "BioticProxyCategoryNode"
                 | TaxonomyNode n -> "TaxonNode"
+                | TaxonomicNamesIndexNode _ -> "TaxonomicNamesIndexNode"
                 | InferenceMethodNode n -> "InferenceMethodNode"
                 | ProxiedTaxonNode -> "ProxiedTaxonNode"
                 | ContextNode _ -> "ContextNode"
@@ -267,6 +269,7 @@ module GraphStructure =
                             | Population.BioticProxies.MicrofossilGroup.Pollen -> sprintf "Morphotype: Pollen - %s" name.Value
                             | Population.BioticProxies.MicrofossilGroup.OtherMicrofossilGroup group -> sprintf "Morphotype: %s - %s" group.Value name.Value
                 | BioticProxyCategoryNode n -> n.ToString()
+                | TaxonomicNamesIndexNode n -> n.Name.Value
                 | TaxonomyNode n ->
                     match n with
                     | Taxonomy.TaxonNode.Life -> "Life"
@@ -416,6 +419,8 @@ module GraphStructure =
                 | Taxonomy.TaxonNode.Species (l,l2,l3) -> sprintf "species_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString(l3.Value)) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Subspecies (l,l2,l3, l4) -> sprintf "subspecies_%s_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString l3.Value) (System.Net.WebUtility.HtmlEncode(l4.Value)) |> toLower |> friendlyKey
                 | Taxonomy.TaxonNode.Variety (l,l2,l3, l4) -> sprintf "variety_%s_%s_%s_%s" (safeString l.Value) (safeString l2.Value) (safeString l3.Value) (System.Net.WebUtility.HtmlEncode(l4.Value)) |> toLower |> friendlyKey
+            | TaxonomicNamesIndexNode n ->
+                sprintf "nomenclature-index_%s" (safeString n.Name.Value) |> toLower |> friendlyKey
             | InferenceMethodNode n ->
                 match n with
                 | BioticProxies.InferenceMethodNode.Implicit -> "Implicit" |> toLower |> friendlyKey
@@ -683,7 +688,9 @@ module GraphStructure =
                 | HasLabel -> compare source sink rel (Relation.Population HasLabel)
                 | InferredUsing -> compare source sink rel (Relation.Population InferredUsing)
                 | InferredAs -> compare source sink rel (Relation.Population InferredAs)
-                | MeasuredBy -> compare source sink rel (Relation.Population MeasuredBy)
+                | MeasuredBy -> compare source sink rel (Relation.Population MeasuredBy)                
+                | IsSynonymOf(opinionMadeBySource, dateMade) -> compare source sink rel (Relation.Population (IsSynonymOf(opinionMadeBySource, dateMade)))
+                | HasIdentifier checklistId -> compare source sink rel (Relation.Population (HasIdentifier checklistId))
               | Source rel ->
                 match rel with
                 | HasTemporalExtent -> compare source sink rel (Relation.Source HasTemporalExtent)
