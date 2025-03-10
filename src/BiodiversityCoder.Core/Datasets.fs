@@ -155,8 +155,11 @@ module Datasets =
         [<Help("When was the source digitised? Use the format 2024-10-24")>]
         DigitisedOn: Time.SimpleDateOnly
         [<Name("Data table (raw data)")>]
-        [<Help("Paste a tab-delimited dataset into this box. The data must be in wide format, with the first column named 'depth' (or an appropriate age unit if age-indexed) and subsequent columns named as the morphotypes in the dataset. The first column should contain depth values in centimetres, and subsequent columns numerical values of the metric in the units as previously specified.")>]
+        [<Help("Paste a tab-delimited dataset into this box. The data must be in wide format, with the first column named 'depth' (or an appropriate age unit if age-indexed) and subsequent columns named as the morphotypes in the dataset. If a sample band (e.g. Xcm - Ycm depth), depths should refer to the upper depth of the band. The first column should contain depth values in centimetres, and subsequent columns numerical values of the metric in the units as previously specified.")>]
         DataTable: DataTable.DataTable
+        [<Name("Data table (additional dimensions)")>]
+        [<Help("Additional indexed properties of the data that are not morphotypes (e.g. sample volume, sample width, pollen sum for % data). Paste a tab-delimited dataset into this box. The data must be in wide format, with the first column named 'depth' (or an appropriate age unit if age-indexed) and subsequent columns named as the morphotypes in the dataset. The first column should contain depth values in centimetres, and subsequent columns numerical values of the metric in the units as previously specified.")>]
+        Dimensions: DataTable.DataTable option
     }
 
     type DatasetNode =
