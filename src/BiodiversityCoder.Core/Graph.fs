@@ -139,18 +139,17 @@ module Graph =
         if source.IsNone || sink.IsNone
         then Error "The connection was not between valid nodes"
         else
-            graph
-            |> List.map(fun i ->
-                if i = source.Value
-                then
-                    let conn : Connection<'connData> = (sourceId, sinkId, weight, connData)
-                    let adjacency = 
-                        if (snd i) |> Seq.contains conn
-                        then snd source.Value
-                        else conn :: snd source.Value
-                    (fst source.Value, adjacency)
-                else i)
-            |> Ok
+            graph 
+            |> List.tryFindIndex ((=) source.Value)
+            |> Option.map(fun i ->
+                let conn : Connection<'connData> = (sourceId, sinkId, weight, connData)
+                let adjacency = 
+                    if snd graph.[i] |> Seq.contains conn
+                    then snd source.Value
+                    else conn :: snd source.Value
+                let atom = fst graph.[i], adjacency
+                graph |> List.insertAt i atom |> List.removeAt (i + 1))
+            |> Result.ofOption "Could not locate source node when adding relation"
 
     let tryFind cond (graph:Graph<_,_>) =
         graph |> Seq.tryFind(fun g -> cond g)
@@ -293,6 +292,9 @@ module GraphStructure =
                     | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "Explicit: Atlas or Key - %s" r.Value
                     | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlasWithLookup r -> sprintf "Explicit: Atlas or Key - %s" r.Reference.Value
                     | BioticProxies.InferenceMethodNode.ImplicitByExpert (lastName, initials) -> sprintf "Implicit: Expert ID - %s, %s" lastName.Value initials.Value
+                    | BioticProxies.InferenceMethodNode.TaxonomicNomenclature n -> sprintf "Explicit (nomenclature): from %s" n.Value
+                    | BioticProxies.InferenceMethodNode.MorphotypeTerminology t -> sprintf "Explicit (terminology): from %s" t.Value
+                    | BioticProxies.InferenceMethodNode.ReferenceCollection (rc,l) -> sprintf "Explicit: %s (reference collection at %s)" rc.Value l.Value
                 | ProxiedTaxonNode -> "[Proxied taxon hyper-edge]"
                 | ContextNode n -> sprintf "%s: %s" (n.SamplingLocation.GetType().Name) n.Name.Value
                 | VernacularTaxonLabelNode(_) -> failwith "Not Implemented"
@@ -427,6 +429,13 @@ module GraphStructure =
                 | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlas r -> sprintf "atlas_%s" ((r.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString) |> toLower |> friendlyKey
                 | BioticProxies.InferenceMethodNode.IdentificationKeyOrAtlasWithLookup r -> sprintf "atlas_lookup_%s" ((r.Reference.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString) |> toLower |> friendlyKey
                 | BioticProxies.InferenceMethodNode.ImplicitByExpert (l,i) -> sprintf "expert_%s_%s" (safeString l.Value) (safeString i.Value) |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.TaxonomicNomenclature n -> sprintf "nomenclature_%s" ((n.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString) |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.MorphotypeTerminology t -> sprintf "morphotypeterminology_%s" ((t.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString) |> toLower |> friendlyKey
+                | BioticProxies.InferenceMethodNode.ReferenceCollection (rc,l) ->
+                    sprintf "referencecollection_%s_%s"
+                        ((rc.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString)
+                        (((l.Value.Split(" ") |> Seq.map (Seq.head >> tryAlphanum) |> Seq.choose id |> Seq.map string |> String.concat "") |> safeString))
+                        |> toLower |> friendlyKey
             | ProxiedTaxonNode -> guidKey (System.Guid.NewGuid())
             | ContextNode _ -> guidKey (System.Guid.NewGuid())
             | VernacularTaxonLabelNode v -> sprintf "%s_%s" (safeString v.Language.Value) (safeString v.Label.Value) |> toLower |> friendlyKey

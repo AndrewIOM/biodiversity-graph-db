@@ -396,26 +396,33 @@ module Storage =
     let addProxiedTaxon' (edge:Population.ProxiedTaxon.ProxiedTaxonHyperEdge) graph = result {
         // Get the three included nodes:
         let! existingProxy = (unwrap graph).Graph |> GraphStructure.Nodes.tryFindProxy (fun n -> n = edge.InferredFrom), "proxy doesn't exist"
-        let! existingInfer = (unwrap graph).Graph |> GraphStructure.Nodes.tryFindInferenceMethod (fun n -> n = edge.InferredUsing), "infer doesn't exist"
-        let existingTaxa = 
+        let! existingInfer = 
+            (edge.InferredUsing :: edge.InferredUsingAdditional)
+            |> List.map (fun t -> (unwrap graph).Graph |> GraphStructure.Nodes.tryFindInferenceMethod (fun n -> n = t) |> Result.ofOption "infer doesn't exist")
+            |> Result.ofList
+        let! existingTaxa = 
             (edge.InferredAs :: edge.InferredAsAdditional)
-            |> List.choose (fun t -> (unwrap graph).Graph |> GraphStructure.Nodes.tryFindTaxon (fun n -> n = t))
+            |> List.map (fun t -> (unwrap graph).Graph |> GraphStructure.Nodes.tryFindTaxon (fun n -> n = t) |> Result.ofOption "Taxa node missing")
+            |> Result.ofList
         let! proxiedGraph, addedNodes = addNodes graph [GraphStructure.PopulationNode GraphStructure.ProxiedTaxonNode]
         // Add relations that make the intermediate node encode the hyper-edge:
         return!
             proxiedGraph
             |> addRelation addedNodes.Head existingProxy (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredFrom)
             |> Result.bind (addRelation addedNodes.Head existingProxy (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredFrom))
-            |> Result.bind (addRelation addedNodes.Head existingInfer (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredUsing))
+            // |> Result.bind (addRelation addedNodes.Head existingInfer (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredUsing))
+            |> Result.bind (fun graph ->
+                existingInfer |> List.fold(fun g t -> 
+                    g |> Result.bind (addRelation addedNodes.Head t (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredUsing))
+                ) (Ok graph))
             |> Result.bind (fun graph ->
                 existingTaxa |> List.fold(fun g t -> 
                     g |> Result.bind (addRelation addedNodes.Head t (GraphStructure.ProposedRelation.Population Population.PopulationRelation.InferredAs))
-                ) (Ok graph)
-            )
+                ) (Ok graph))
             |> Result.lift(fun g -> g, addedNodes.Head |> fst |> fst)
     }
 
-    let addProxiedTaxon existingProxy existingTaxon existingAdditionalTaxa existingInfer fileGraph =
+    let addProxiedTaxon existingProxy existingTaxon existingAdditionalTaxa existingInfer existingAdditionalInfer fileGraph =
         if (existingTaxon :: existingAdditionalTaxa) |> List.distinct |> List.length <> ((existingTaxon :: existingAdditionalTaxa) |> List.length)
         then Error "Cannot add proxied taxon inferred as the same taxon more than once"
-        else addProxiedTaxon' {InferredFrom = existingProxy; InferredUsing = existingInfer; InferredAs = existingTaxon; InferredAsAdditional = existingAdditionalTaxa } fileGraph
+        else addProxiedTaxon' {InferredFrom = existingProxy; InferredUsing = existingInfer; InferredAs = existingTaxon; InferredAsAdditional = existingAdditionalTaxa; InferredUsingAdditional = existingAdditionalInfer } fileGraph

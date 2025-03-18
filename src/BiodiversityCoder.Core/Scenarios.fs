@@ -298,6 +298,7 @@ module Scenarios =
                                 existingTaxon
                                 []
                                 BioticProxies.InferenceMethodNode.Implicit
+                                []
                                 g
                         )
                         |> Result.bind(fun (g, proxiedKey) -> 

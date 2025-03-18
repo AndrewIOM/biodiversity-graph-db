@@ -80,12 +80,22 @@ module Population =
 
         /// The method through which a biotic proxy was inferred to
         /// be a particular taxon. For example, for microfossils it
-        /// is common to use a particular regional atlas.
+        /// is common to use a particular regional atlas. Key components
+        /// of the inference method are:
+        /// (a) Taxonomic nomenclature (i.e. if species names etc. are used without authorships)
+        /// (b) Morphotype terminology (i.e. the source used to define naming conventions)
+        /// (c) Pollen key or atlas(es) (i.e. one or more pollen keys) 
+        /// There may be multiple steps to the inference method, which may or
+        /// may not be explicit in the text; in these cases, use multiple
+        /// relations to these nodes.
         type InferenceMethodNode =
             | IdentificationKeyOrAtlas of reference:Text.Text
             | IdentificationKeyOrAtlasWithLookup of lookup:TaxonLookup
+            | ReferenceCollection of name:Text.ShortText * location: Text.ShortText
             | Implicit
             | ImplicitByExpert of lastName:Text.ShortText * initials:Text.ShortText
+            | TaxonomicNomenclature of reference: Text.ShortText
+            | MorphotypeTerminology of reference: Text.ShortText
 
         /// Biotic proxy represents the physical nature of the material (e.g. the component)
         /// and the taxonomic label attached to it. Examples:
@@ -132,6 +142,7 @@ module Population =
         type ProxiedTaxonHyperEdge = {
             InferredFrom:BioticProxyNode
             InferredUsing:InferenceMethodNode
+            InferredUsingAdditional:InferenceMethodNode list
             InferredAs:TaxonNode
             InferredAsAdditional:TaxonNode list
         }

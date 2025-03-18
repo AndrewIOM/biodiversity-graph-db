@@ -234,7 +234,7 @@ module App =
                         | _ -> Error "Not a taxonomy node" )
                 ) |> Result.ofList
 
-        let! updatedGraph, hyperEdgeId = Storage.addProxiedTaxon proxy taxa.Head taxa.Tail infer g
+        let! updatedGraph, hyperEdgeId = Storage.addProxiedTaxon proxy taxa.Head taxa.Tail infer [] g
         
         // Save (1) outcome measure from hyperedge to outcome node, and (2) relation from timeline to hyperedge.
         let! timeline = Storage.atomByKey timelineId updatedGraph |> Result.ofOption "Could not find timeline"
