@@ -27,6 +27,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v2
         with:
