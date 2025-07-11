@@ -33,7 +33,8 @@ module Seed =
                     InferredFrom = proxyNode
                     InferredUsing = inferNode
                     InferredAs = taxonNode
-                    InferredAsAdditional = [] })
+                    InferredAsAdditional = []
+                    InferredUsingAdditional = [] })
         }
 
     /// Import all sources from a bibtext file.
