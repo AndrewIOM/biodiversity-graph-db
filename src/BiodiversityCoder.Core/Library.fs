@@ -73,6 +73,8 @@ module App =
             SelectedSource: SelectedSource option
             TaxonLookup: TaxonomicLookupModel
             LeaveFieldsFilled: bool
+            HideExcludedSources: bool
+            SourceFilter: string
             CrossRefLookupModel: CrossRefLookupModel
         }
 
@@ -144,7 +146,7 @@ module App =
         | Exclude of because:Sources.ExclusionReason * notes:FieldDataTypes.Text.Text
 
     let initModel =
-        { RelationCreationViewModels = Map.empty; LeaveFieldsFilled = false; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Message = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty
+        { RelationCreationViewModels = Map.empty; SourceFilter = ""; HideExcludedSources = true; LeaveFieldsFilled = false; Statistics = None; FolderLocation = ""; TaxonLookup = { Rank = "Genus"; Family = ""; Genus = ""; Species = ""; Authorship = ""; Result = None }; NodeCreationRelations = Map.empty; SelectedSource = None; Graph = None; Import = ""; Message = None; Page = Extract; NodeCreationViewModels = Map.empty; NodeCreationValidationErrors = Map.empty
           CrossRefLookupModel = { SearchTerm = ""; Match = None } }, Cmd.none
 
     type Message =
@@ -159,6 +161,8 @@ module App =
         | ImportColandr
         | GenStatistics
         | ToggleLeaveFilled
+        | ToggleHideExcluded
+        | FilterSourceList of string
         | FormMessage of FormMessage
         | SelectSource of key:Graph.UniqueKey
         | SelectTimeline of key: Graph.UniqueKey
@@ -252,8 +256,10 @@ module App =
         | SetPage page -> { model with Page = page }, Cmd.none
         | DismissMessage -> { model with Message = None }, Cmd.none
         | ToggleLeaveFilled -> { model with LeaveFieldsFilled = not model.LeaveFieldsFilled }, Cmd.none
+        | ToggleHideExcluded -> { model with HideExcludedSources = not model.HideExcludedSources }, Cmd.none
         | ChangeImportText s -> { model with Import = s }, Cmd.none
         | SetFolderManually s -> { model with FolderLocation = s }, Cmd.none
+        | FilterSourceList s -> { model with SourceFilter = s }, Cmd.none
         | ImportBibtex -> 
             match Sources.BibtexParser.parse model.Import with
             | Error e -> { model with Message = Some (ErrorMessage, e) }, Cmd.none
@@ -1388,8 +1394,10 @@ module App =
                                                 cond (g.Nodes<Sources.SourceNode>()) <| function
                                                 | Some sources ->
                                                     sources
+                                                    |> Seq.filter(fun k -> if model.SourceFilter <> "" then System.Text.RegularExpressions.Regex.IsMatch(k.Value, model.SourceFilter) else true)
                                                     |> Seq.map(fun k ->
                                                         option [ attr.value k.Key.AsString ] [ text k.Value ])
+                                                    |> Seq.append [ option [ attr.disabled true; attr.value "NONE SELECTED" ] [ text "-- select a source --" ] ]
                                                     |> Seq.toList
                                                     |> concat
                                                 | None -> empty
@@ -1399,12 +1407,16 @@ module App =
                                                 cond (g.Nodes<Sources.SourceNode>()) <| function
                                                 | Some sources ->
                                                     sources
+                                                    |> Seq.filter(fun k -> if model.SourceFilter <> "" then System.Text.RegularExpressions.Regex.IsMatch(k.Value, model.SourceFilter) else true)
                                                     |> Seq.map(fun k ->
                                                         option [ attr.value k.Key.AsString ] [ text k.Value ])
+                                                    |> Seq.append [ option [ attr.disabled true; attr.value "NONE SELECTED" ] [ text "-- select a source --" ] ]
                                                     |> Seq.toList
                                                     |> concat
                                                 | None -> empty
                                             )]
+                                        input [ _class "form-control"; attr.placeholder "Filter... (accepts regex)";
+                                            bind.input.string model.SourceFilter (FilterSourceList >> dispatch) ]
                                     ]
                                 ]
 
