@@ -398,6 +398,8 @@ module FieldDataTypes =
         type Polygon = private Polygon of (Latitude * Longitude) list
         [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
         type CoordinateDMS = private CoordinateDMS of string
+        [<JsonObject(MemberSerialization = MemberSerialization.Fields)>]
+        type CoordinateDDM = private CoordinateDDM of string
 
         let createLatitude lat =
             if lat >= -89.9 && lat <= 89.9 then lat * 1.<DD> |> Latitude |> Ok
@@ -417,9 +419,15 @@ module FieldDataTypes =
             then coordString |> CoordinateDMS |> Ok
             else Error "Coordinate was not in the format: 40°26'46\"N,79°01'00\"W"
 
+        let createCoordinateDDM (coordString:string) =
+            if System.Text.RegularExpressions.Regex.IsMatch(coordString, "^([0-9]{1,2})[:|°]([0-9]{1,2}(?:\.[0-9]+){0,1})[:|'|′]?([N|S]),([0-9]{1,3})[:|°]([0-9]{1,2}(?:\.[0-9]+){0,1})[:|'|′]?([E|W])$")
+            then coordString |> CoordinateDMS |> Ok
+            else Error "Coordinate was not in the format: 40°26'N,79°01'W"
+
         type SamplingLocation =
             | Site      of latitude:Latitude * longitude:Longitude
             | SiteDMS   of coordinate:CoordinateDMS
+            | SiteDDM   of coordinate:CoordinateDDM
             | Area      of polygon:Polygon
             | Locality  of locality:Text.ShortText * district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
             | District  of district:Text.ShortText * region:Text.ShortText * country:Text.ShortText
@@ -431,6 +439,7 @@ module FieldDataTypes =
         let private unwrapLon (Longitude l) = l
         let private unwrapPoly (Polygon l) = l
         let private unwrapCoordDms (CoordinateDMS c) = c
+        let private unwrapCoordDdm (CoordinateDDM c) = c
 
         type Latitude with 
             static member TryCreate s = 
@@ -488,6 +497,14 @@ module FieldDataTypes =
                 | _ -> Error "Not a valid coorindate value"
                 |> Result.toOption
             member this.Value = unwrapCoordDms this
+
+        type CoordinateDDM with 
+            static member TryCreate s = 
+                match s with 
+                | Text s -> createCoordinateDDM s
+                | _ -> Error "Not a valid coorindate value"
+                |> Result.toOption
+            member this.Value = unwrapCoordDdm this
 
 
     [<RequireQualifiedAccess>]

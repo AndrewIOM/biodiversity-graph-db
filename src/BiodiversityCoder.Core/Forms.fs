@@ -339,6 +339,7 @@ module ViewGen =
                 | t when t = typeof<FieldDataTypes.LanguageCode.LanguageCode> -> genStringInput field existingValue 2 dispatch
                 | t when t = typeof<FieldDataTypes.Geography.Polygon> -> genStringInput field existingValue 1000 dispatch
                 | t when t = typeof<FieldDataTypes.Geography.CoordinateDMS> -> genStringInput field existingValue 100 dispatch
+                | t when t = typeof<FieldDataTypes.Geography.CoordinateDDM> -> genStringInput field existingValue 100 dispatch
                 | t when t = typeof<FieldDataTypes.Author.Author> -> genStringInput field existingValue 2000 dispatch
                 | t when t = typeof<FieldDataTypes.DigitalObjectIdentifier.DigitalObjectIdentifier> -> genStringInput field existingValue 150 dispatch
                 | t when t = typeof<FieldDataTypes.IntRange.IntRange> -> genStringInput field existingValue 50 dispatch
